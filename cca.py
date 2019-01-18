@@ -62,15 +62,21 @@ def calc_pi_from_cross_cov_mats(cross_cov_mats, proj=None):
     else:
         d = cross_cov_mats.shape[1] #or cross_cov_mats.shape[2]
 
+
+    cross_cov_mats_proj = []
+    if type(proj) != type(None):
+        #cross_cov_mats_proj = np.einsum('ij,nil,lk->njk', proj, cross_cov_mats, proj)
+        for i in range(2*T):
+            cross_cov = cross_cov_mats[i]
+            cross_cov_proj = np.dot(proj.T, np.dot(cross_cov, proj))
+            cross_cov_mats_proj.append(cross_cov_proj)
+    else:
+        cross_cov_mats_proj = cross_cov_mats
+
     cross_cov_mats_repeated = []
     for i in range(2*T):
         for j in range(2*T):
-            cross_cov = cross_cov_mats[int(np.abs(i-j))]
-            if type(proj) != type(None):
-                cross_cov_proj = np.dot(proj.T, np.dot(cross_cov, proj))
-                cross_cov_mats_repeated.append(cross_cov_proj)
-            else:
-                cross_cov_mats_repeated.append(cross_cov)
+            cross_cov_mats_repeated.append(cross_cov_mats_proj[abs(i-j)])
 
     cov_2T_tensor = np.reshape(np.array(cross_cov_mats_repeated), (2*T, 2*T, d, d))
     cov_2T = np.concatenate([np.concatenate(cov_ii, axis=1) for cov_ii in cov_2T_tensor])
@@ -103,7 +109,7 @@ def calc_pi(X, T):
     return calc_pi_from_cross_cov_mats(cross_cov_mats)
 
 
-def build_loss(X, T, d):
+def build_loss(X, T, d, lambda_param=10):
     """Constructs a loss function which gives the (negative) predictive information
     in the projection of multidimensional timeseries data X onto a d-dimensional
     basis, where predictive information is computed using a stationary Gaussian 
@@ -130,11 +136,9 @@ def build_loss(X, T, d):
 
     def loss(V_flat):
 
-        #Reshape and normalize V_flat
-        V_unnormalized = V_flat.reshape(N, d)
-        V = V_unnormalized / np.sqrt(np.sum(V_unnormalized**2, axis=0))
-
-        return -calc_pi_from_cross_cov_mats(cross_cov_mats, V)
+        V = V_flat.reshape(N, d)
+        ortho_regularization = lambda_param * np.sum((np.dot(V.T, V) - np.eye(d))**2)        
+        return -calc_pi_from_cross_cov_mats(cross_cov_mats, V) + ortho_regularization
 
     return loss
 
@@ -158,7 +162,9 @@ def pca(X):
     w, V = w[::-1], V[:, ::-1]
     return w, V
 
-def run_cca(X, T, d, init="random"):
+    
+
+def run_cca(X, T, d, init="random", method="BFGS", tol=1e-6, lambda_param=10, verbose=False):
     """Runs CCA on multidimensional timeseries data X to discover a projection
     onto a d-dimensional subspace which maximizes the complexity of the d-dimensional
     dynamics.
@@ -179,24 +185,54 @@ def run_cca(X, T, d, init="random"):
         Projection matrix.
     """
 
-    loss = build_loss(X, T, d)
+    loss = build_loss(X, T, d, lambda_param=lambda_param)
     grad_loss = grad(loss)
-
+    
     N = X.shape[1]
-
+    
+    if verbose:
+        def callback(V_flat):
+            loss_val = loss(V_flat)
+            V = V_flat.reshape((N, d))
+            reg_part = lambda_param * np.sum((np.dot(V.T, V) - np.eye(d))**2) 
+            loss_no_reg = loss_val - reg_part
+            pi = -loss_no_reg
+            print(str(pi) + " bits")
+    else:
+        callback = None
+              
     if init == "random":
         V_init = np.random.normal(0, 1, (N, d))
         V_init = V_init / np.sqrt(np.sum(V_init**2, axis=0))
-    elif init == "PCA":
+    if init == "random_ortho":
+        V_init = scipy.stats.ortho_group.rvs(N)[:, :d]
+    if init == "uniform":
+        V_init = np.ones((N, d))/np.sqrt(N)
+        V_init = V_init + np.random.normal(0, 0.001, V_init.shape)
+    elif init == "pca":
         w, V = pca(X)
         V_init = V[:, :d]
 
-    opt_result = scipy.optimize.minimize(loss, V_init.flatten(), method='BFGS', jac=grad_loss)
+    opt_result = scipy.optimize.minimize(loss, V_init.flatten(), method=method, jac=grad_loss, callback=callback, tol=tol)
     V_opt_flat = opt_result["x"]
     V_opt = V_opt_flat.reshape((N, d))
-    V_opt = V_opt / np.sqrt(np.sum(V_opt**2, axis=0))
+    
+    V_opt = scipy.linalg.orth(V_opt) #Orhtonormalize
 
     return V_opt
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

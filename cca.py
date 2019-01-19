@@ -36,7 +36,7 @@ def calc_cross_cov_mats(X, num_lags):
     return cross_cov_mats
     
 
-def calc_pi_from_cross_cov_mats(cross_cov_mats, proj=None):
+def calc_pi_from_cross_cov_mats(cross_cov_mats, proj=None, return_cov=False):
     """Calculates the mutual information across consecutive time
     windows of length T in a Gaussian process whose statistics are
     given by the provided cross-covariance matrices.
@@ -50,6 +50,8 @@ def calc_pi_from_cross_cov_mats(cross_cov_mats, proj=None):
         If provided, the N-dimensional data are projected onto a d-dimensional
         basis given by the columns of proj. Then, the mutual information is
         computed for this d-dimensional timeseries.
+    return_cov : bool
+        If true, returns the big covariance matrix used to compute mutual information.
     Returns
     -------
     PI : float
@@ -76,7 +78,10 @@ def calc_pi_from_cross_cov_mats(cross_cov_mats, proj=None):
     cross_cov_mats_repeated = []
     for i in range(2*T):
         for j in range(2*T):
-            cross_cov_mats_repeated.append(cross_cov_mats_proj[abs(i-j)])
+            if i > j:
+                cross_cov_mats_repeated.append(cross_cov_mats_proj[abs(i-j)])
+            else:
+                cross_cov_mats_repeated.append(cross_cov_mats_proj[abs(i-j)].T)
 
     cov_2T_tensor = np.reshape(np.array(cross_cov_mats_repeated), (2*T, 2*T, d, d))
     cov_2T = np.concatenate([np.concatenate(cov_ii, axis=1) for cov_ii in cov_2T_tensor])
@@ -86,7 +91,10 @@ def calc_pi_from_cross_cov_mats(cross_cov_mats, proj=None):
     sgn_2T, logdet_2T = np.linalg.slogdet(cov_2T)
     PI = (2*logdet_T - logdet_2T)/np.log(2)
 
-    return PI
+    if return_cov:
+        return PI, cov_2T
+    else:
+        return PI
 
 def calc_pi(X, T):
     """Calculates the mutual information across consecutive time
@@ -108,6 +116,15 @@ def calc_pi(X, T):
     cross_cov_mats = calc_cross_cov_mats(X, 2*T)
     return calc_pi_from_cross_cov_mats(cross_cov_mats)
 
+
+def compute_cov_mat(X, T):
+    cross_cov_mats = calc_cross_cov_mats(X, 2*T)
+    pi, cov = calc_pi_from_cross_cov_mats(cross_cov_mats, return_cov=True)
+    return cov
+
+def reg_fn(V, lambda_param):
+    d = V.shape[1]
+    return lambda_param * np.sum((np.dot(V.T, V) - np.eye(d))**2) 
 
 def build_loss(X, T, d, lambda_param=10):
     """Constructs a loss function which gives the (negative) predictive information
@@ -137,8 +154,8 @@ def build_loss(X, T, d, lambda_param=10):
     def loss(V_flat):
 
         V = V_flat.reshape(N, d)
-        ortho_regularization = lambda_param * np.sum((np.dot(V.T, V) - np.eye(d))**2)        
-        return -calc_pi_from_cross_cov_mats(cross_cov_mats, V) + ortho_regularization
+        reg_part = reg_fn(V, lambda_param)    
+        return -calc_pi_from_cross_cov_mats(cross_cov_mats, V) + reg_part
 
     return loss
 
@@ -194,24 +211,27 @@ def run_cca(X, T, d, init="random", method="BFGS", tol=1e-6, lambda_param=10, ve
         def callback(V_flat):
             loss_val = loss(V_flat)
             V = V_flat.reshape((N, d))
-            reg_part = lambda_param * np.sum((np.dot(V.T, V) - np.eye(d))**2) 
+            reg_part = reg_fn(V, lambda_param)
             loss_no_reg = loss_val - reg_part
             pi = -loss_no_reg
-            print(str(pi) + " bits")
+            print("PI = " + str(np.round(pi, 4)) + " bits, reg = " + str(np.round(reg_part, 4)))
     else:
         callback = None
               
-    if init == "random":
-        V_init = np.random.normal(0, 1, (N, d))
-        V_init = V_init / np.sqrt(np.sum(V_init**2, axis=0))
-    if init == "random_ortho":
-        V_init = scipy.stats.ortho_group.rvs(N)[:, :d]
-    if init == "uniform":
-        V_init = np.ones((N, d))/np.sqrt(N)
-        V_init = V_init + np.random.normal(0, 0.001, V_init.shape)
-    elif init == "pca":
-        w, V = pca(X)
-        V_init = V[:, :d]
+    if type(init) == str:
+        if init == "random":
+            V_init = np.random.normal(0, 1, (N, d))
+            V_init = V_init / np.sqrt(np.sum(V_init**2, axis=0))
+        if init == "random_ortho":
+            V_init = scipy.stats.ortho_group.rvs(N)[:, :d]
+        if init == "uniform":
+            V_init = np.ones((N, d))/np.sqrt(N)
+            V_init = V_init + np.random.normal(0, 0.001, V_init.shape)
+        elif init == "pca":
+            w, V = pca(X)
+            V_init = V[:, :d]
+    elif type(init) == np.ndarray:
+        V_init = init
 
     opt_result = scipy.optimize.minimize(loss, V_init.flatten(), method=method, jac=grad_loss, callback=callback, tol=tol)
     V_opt_flat = opt_result["x"]

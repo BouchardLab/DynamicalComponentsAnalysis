@@ -1,5 +1,6 @@
 import numpy as np
 import scipy
+import cca
 
 def gen_gp_cov_mat(T, N, kernel):
     """Generates a N*T-by-N*T covariance matrix for a spatiotemporal Gaussian
@@ -47,7 +48,7 @@ def calc_pi_for_gp(T, N, kernel):
         (Temporal) predictive information in the Gaussian process.
     """
     
-    cov_2T = gen_GP_cov_mat(2*T, N, kernel)
+    cov_2T = gen_gp_cov_mat(2*T, N, kernel)
     cov_T = cov_2T[:N*T, :N*T]
     sgn_T, logdet_T = np.linalg.slogdet(cov_T)
     sgn_2T, logdet_2T = np.linalg.slogdet(cov_2T)
@@ -109,7 +110,7 @@ def sample_gp(T, N, kernel, num_to_concat=1):
     return sample
 
 
-def embed_gp(T, N, d, kernel, noise_cov, num_to_concat=1):
+def embed_gp(T, N, d, kernel, noise_cov, num_to_concat=1, return_embedding=False):
     """Embed a d-dimensional Gaussian process into N-dimensional space, then
     add (potentially) spatially structured white noise.
     ----------
@@ -126,6 +127,8 @@ def embed_gp(T, N, d, kernel, noise_cov, num_to_concat=1):
         time point in an iid fashion.
     num_to_concat : int
         Number of samples of lenght T to concatenate before returning the result.
+    return_embedding : bool
+        If true, returns the embedding N-by-d matrix E in addition to the data X.
     Returns
     -------
     X : np.ndarray, size (T*num_to_concat, N)
@@ -134,7 +137,7 @@ def embed_gp(T, N, d, kernel, noise_cov, num_to_concat=1):
     
     #Latent dynamics
     Y = sample_gp(T, d, kernel, num_to_concat)
-    
+        
     #Random orthogonal embedding matrix U
     U = scipy.stats.ortho_group.rvs(N)[:, :d]
     
@@ -144,7 +147,10 @@ def embed_gp(T, N, d, kernel, noise_cov, num_to_concat=1):
     #Corrupt data by spatially structured white noise
     X += np.random.multivariate_normal(mean=np.zeros(N), cov=noise_cov, size=T*num_to_concat)
     
-    return X
+    if return_embedding:
+        return X, U
+    else:
+        return X
     
     
     

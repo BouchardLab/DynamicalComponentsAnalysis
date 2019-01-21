@@ -2,7 +2,7 @@ import numpy as np
 import scipy
 import cca
 
-def gen_gp_cov_mat(T, N, kernel):
+def gen_gp_cov(T, N, kernel):
     """Generates a N*T-by-N*T covariance matrix for a spatiotemporal Gaussian
     process (2D Gaussian random field) with a provided kernel.
     Parameters
@@ -29,6 +29,7 @@ def gen_gp_cov_mat(T, N, kernel):
 
     return C
 
+
 def calc_pi_for_gp(T, N, kernel):
     """Calculates the predictive information in a spatiotemporal Gaussian process 
     with a given kernel.
@@ -48,13 +49,14 @@ def calc_pi_for_gp(T, N, kernel):
         (Temporal) predictive information in the Gaussian process.
     """
     
-    cov_2T = gen_gp_cov_mat(2*T, N, kernel)
+    cov_2T = gen_gp_cov(2*T, N, kernel)
     cov_T = cov_2T[:N*T, :N*T]
     sgn_T, logdet_T = np.linalg.slogdet(cov_T)
     sgn_2T, logdet_2T = np.linalg.slogdet(cov_2T)
     PI = (2*logdet_T - logdet_2T)/np.log(2)
     
     return PI
+
 
 def gen_kernel(kernel_type, spatial_scale, temporal_scale):
     """Generates a specified type of Kernel for a spatiotemporal Gaussian
@@ -80,6 +82,7 @@ def gen_kernel(kernel_type, spatial_scale, temporal_scale):
         def K(t1, t2, x1, x2):
             return np.exp(-np.abs(t1-t2)/temporal_scale - np.abs(x1-x2)/spatial_scale)
     return K
+
 
 def sample_gp(T, N, kernel, num_to_concat=1):
     """Draw a sample from a spatiotemporal Gaussian process.
@@ -151,17 +154,7 @@ def embed_gp(T, N, d, kernel, noise_cov, num_to_concat=1, return_embedding=False
         return X, U
     else:
         return X
+
     
     
     
-
-
-
-
-
-
-
-
-
-
-

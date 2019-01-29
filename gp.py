@@ -112,8 +112,7 @@ def sample_gp(T, N, kernel, num_to_concat=1):
     
     return sample
 
-
-def embed_gp(T, N, d, kernel, noise_cov, num_to_concat=1, return_embedding=False):
+def embed_gp(T, N, d, kernel, noise_cov, T_pi, num_to_concat=1):
     """Embed a d-dimensional Gaussian process into N-dimensional space, then
     add (potentially) spatially structured white noise.
     ----------
@@ -130,8 +129,6 @@ def embed_gp(T, N, d, kernel, noise_cov, num_to_concat=1, return_embedding=False
         time point in an iid fashion.
     num_to_concat : int
         Number of samples of lenght T to concatenate before returning the result.
-    return_embedding : bool
-        If true, returns the embedding N-by-d matrix E in addition to the data X.
     Returns
     -------
     X : np.ndarray, size (T*num_to_concat, N)
@@ -150,10 +147,19 @@ def embed_gp(T, N, d, kernel, noise_cov, num_to_concat=1, return_embedding=False
     #Corrupt data by spatially structured white noise
     X += np.random.multivariate_normal(mean=np.zeros(N), cov=noise_cov, size=T*num_to_concat)
     
-    if return_embedding:
-        return X, U
-    else:
-        return X
+    #Compute the PI of the high-dimensional, noisy process
+    cov_low_d = gen_gp_cov(T=2*T_pi, N=d, kernel=kernel)
+    low_d_cross_cov_mats = cca.calc_cross_cov_mats_from_cov(N=d, num_lags=2*T_pi, cov=cov_low_d)
+    high_d_cross_cov_mats = np.array([np.dot(U, np.dot(C, U.T)) for C in low_d_cross_cov_mats])
+    high_d_cross_cov_mats[0] += noise_cov
+    cov_high_d = cca.calc_cov_from_cross_cov_mats(high_d_cross_cov_mats)
+    full_pi = cca.calc_pi_from_cov(cov_high_d)
+    
+    embedding_cross_cov_mats = np.array([np.dot(U.T, np.dot(C, U)) for C in high_d_cross_cov_mats])
+    cov_embedding = cca.calc_cov_from_cross_cov_mats(embedding_cross_cov_mats)
+    embedding_pi = cca.calc_pi_from_cov(cov_embedding)
+    
+    return X, U, full_pi, embedding_pi
 
     
     

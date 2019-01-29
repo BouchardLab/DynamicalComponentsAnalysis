@@ -4,7 +4,7 @@ import scipy.optimize
 import scipy.stats
 from autograd import grad
 
-def calc_cross_cov_mats(X, num_lags, regularization=None, reg_ops=None):
+def calc_cross_cov_mats_from_data(X, num_lags, regularization=None, reg_ops=None):
     """Calculates N-by-N cross-covariance matrices for time lags
     up to num_lags - 1, where N is the dimensionality of the time
     series data. The data X are mean-centered prior to the computation.
@@ -108,21 +108,47 @@ def calc_cross_cov_mats(X, num_lags, regularization=None, reg_ops=None):
         
         #Note final_cov_est will not be stationary, since stationarity
         #is not preserved by the regularization technique.
-        #Thus, we average along the lower diagonal for each delta_t.
-        cross_cov_mats = np.zeros((num_lags, N, N))
-        for delta_t in range(num_lags):
-            to_avg = np.zeros((num_lags-delta_t, N, N))
-            for i in range(len(to_avg)):
-                i_offset = delta_t*N
-                to_avg[i, :, :] = final_cov_est[i_offset+i*N:i_offset+(i+1)*N, i*N:(i+1)*N]
-            cross_cov_mats[delta_t, :, :] = np.mean(to_avg, axis=0)
+        #Thus, we average over the cross-covariance sub-matrices for
+        #constant |t1-t2|
+        cross_cov_mats = calc_cross_cov_mats_from_cov(N, num_lags, final_cov_est)
         return cross_cov_mats
+    
+    
+def calc_cross_cov_mats_from_cov(N, num_lags, cov):
+    """Calculates num_lags N-by-N cross-covariance matrices given
+    a N*num_lags-by-N*num_lags spatiotemporal covariance matrix by
+    averaging over off-diagonal cross-covariance blocks with
+    constant |t1-t2|.
+    Parameters
+    ----------
+    N : int
+        Numbner of spatial dimensions.
+    num_lags: int
+        Number of time-lags.
+    cov : np.ndarray, shape (N*num_lags, N*num_lags)
+        Spatiotemporal covariance matrix.  
+    Returns
+    -------
+    cross_cov_mats : np.ndarray, shape (num_lags, N, N)
+        Cross-covariance matrices.
+    """
+        
+    cross_cov_mats = np.zeros((num_lags, N, N))
+    for delta_t in range(num_lags):
+        to_avg_lower = np.zeros((num_lags-delta_t, N, N))
+        to_avg_upper = np.zeros((num_lags-delta_t, N, N))
+        for i in range(num_lags-delta_t):
+            i_offset = delta_t*N
+            to_avg_lower[i, :, :] = cov[i_offset+i*N:i_offset+(i+1)*N, i*N:(i+1)*N]
+            to_avg_upper[i, :, :] = cov[i*N:(i+1)*N, i_offset+i*N:i_offset+(i+1)*N]
+        cross_cov_mats[delta_t, :, :] = 0.5*(np.mean(to_avg_lower, axis=0) + np.mean(to_avg_upper, axis=0))
+    return cross_cov_mats
 
     
 def calc_cov_from_cross_cov_mats(cross_cov_mats):
-    """Calculates a N*num_lags-by-N*num_lags covariance matrix based on
-    num_lags N-by-N cross-covariance matrices. This function is 'autograd-safe'
-    since is does not use array assignment, only Python list appending.
+    """Calculates the N*num_lags-by-N*num_lags spatiotemporal covariance matrix
+    based on num_lags N-by-N cross-covariance matrices. This function is
+    'autograd-safe' since is does not use array assignment, only Python list appending.
     Parameters
     ----------
     cross_cov_mats : np.ndarray, shape (num_lags, N, N)
@@ -201,7 +227,6 @@ def calc_pi_from_cross_cov_mats(cross_cov_mats, proj=None):
     else:
         d = cross_cov_mats.shape[1] #or cross_cov_mats.shape[2]
 
-
     cross_cov_mats_proj = []
     if type(proj) != type(None):
         for i in range(2*T):
@@ -211,9 +236,8 @@ def calc_pi_from_cross_cov_mats(cross_cov_mats, proj=None):
     else:
         cross_cov_mats_proj = cross_cov_mats
 
-    
-    cov_2T = calc_cov_mat_from_cross_cov_mats(cross_cov_mats_proj)
-    PI = calc_pi_from_cov_mat(cov_2T)
+    cov_2T = calc_cov_from_cross_cov_mats(np.array(cross_cov_mats_proj))
+    PI = calc_pi_from_cov(cov_2T)
 
     return PI
 
@@ -264,7 +288,7 @@ def build_loss(cross_cov_mats, d, lambda_param=10):
     def loss(V_flat):
 
         V = V_flat.reshape(N, d)
-        reg_val = reg_fn(V, lambda_param)    
+        reg_val = ortho_reg_fn(V, lambda_param)    
         return -calc_pi_from_cross_cov_mats(cross_cov_mats, V) + reg_val
 
     return loss
@@ -300,7 +324,7 @@ def run_cca(cross_cov_mats, d, init="random", method="BFGS", tol=1e-6, lambda_pa
         def callback(V_flat):
             loss_val = loss(V_flat) 
             V = V_flat.reshape((N, d))
-            reg_val = reg_fn(V, lambda_param)
+            reg_val = ortho_reg_fn(V, lambda_param)
             loss_no_reg = loss_val - reg_val
             pi = -loss_no_reg
             print("PI = " + str(np.round(pi, 4)) + " bits, reg = " + str(np.round(reg_part, 4)))

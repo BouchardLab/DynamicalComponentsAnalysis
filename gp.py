@@ -31,7 +31,7 @@ def gen_gp_cov(T, N, kernel):
 
 
 def calc_pi_for_gp(T, N, kernel):
-    """Calculates the predictive information in a spatiotemporal Gaussian process 
+    """Calculates the predictive information in a spatiotemporal Gaussian process
     with a given kernel.
     Parameters
     ----------
@@ -48,13 +48,13 @@ def calc_pi_for_gp(T, N, kernel):
     PI : float
         (Temporal) predictive information in the Gaussian process.
     """
-    
+
     cov_2T = gen_gp_cov(2*T, N, kernel)
     cov_T = cov_2T[:N*T, :N*T]
     sgn_T, logdet_T = np.linalg.slogdet(cov_T)
     sgn_2T, logdet_2T = np.linalg.slogdet(cov_2T)
     PI = (2*logdet_T - logdet_2T)/np.log(2)
-    
+
     return PI
 
 
@@ -74,7 +74,7 @@ def gen_kernel(kernel_type, spatial_scale, temporal_scale):
     K : function
         Kernel of the form K(t1, t2, x1, x2).
     """
-    
+
     if kernel_type == "squared_exp":
         def K(t1, t2, x1, x2):
             return np.exp(-(t1-t2)**2/temporal_scale**2 - (x1-x2)**2/spatial_scale**2)
@@ -101,15 +101,15 @@ def sample_gp(T, N, kernel, num_to_concat=1):
     sample : np.ndarray, size (T*num_to_concat, N)
         Sample from the Gaussian process.
     """
-    
+
     t1, t2, x1, x2 = np.arange(T), np.arange(T), np.arange(N), np.arange(N)
     t1, t2, x1, x2 = np.meshgrid(t1, t2, x1, x2, indexing="ij")
     C = kernel(t1, t2, x1, x2)
     C = C.swapaxes(1,2).reshape(N*T, N*T)
-    
+
     sample = np.concatenate(np.random.multivariate_normal(mean=np.zeros(C.shape[0]), cov=C, size=num_to_concat))
     sample = sample.reshape(T*num_to_concat, N)
-    
+
     return sample
 
 def embed_gp(T, N, d, kernel, noise_cov, T_pi, num_to_concat=1):
@@ -121,7 +121,7 @@ def embed_gp(T, N, d, kernel, noise_cov, T_pi, num_to_concat=1):
     N : int
         Ambient dimension.
     d : int
-        Gaussian process dimension. 
+        Gaussian process dimension.
     kernel : function
         Kernel of the form K(t1, t2, x1, x2).
     noise_cov : np.ndarray, shape (N, N)
@@ -134,19 +134,19 @@ def embed_gp(T, N, d, kernel, noise_cov, T_pi, num_to_concat=1):
     X : np.ndarray, size (T*num_to_concat, N)
         Embedding of GP into high-dimensional space, plus noise.
     """
-    
+
     #Latent dynamics
     Y = sample_gp(T, d, kernel, num_to_concat)
-        
+
     #Random orthogonal embedding matrix U
     U = scipy.stats.ortho_group.rvs(N)[:, :d]
-    
+
     #Data matrix X
     X = np.dot(Y, U.T)
-    
+
     #Corrupt data by spatially structured white noise
     X += np.random.multivariate_normal(mean=np.zeros(N), cov=noise_cov, size=T*num_to_concat)
-    
+
     #Compute the PI of the high-dimensional, noisy process
     cov_low_d = gen_gp_cov(T=2*T_pi, N=d, kernel=kernel)
     low_d_cross_cov_mats = cca.calc_cross_cov_mats_from_cov(N=d, num_lags=2*T_pi, cov=cov_low_d)
@@ -154,13 +154,9 @@ def embed_gp(T, N, d, kernel, noise_cov, T_pi, num_to_concat=1):
     high_d_cross_cov_mats[0] += noise_cov
     cov_high_d = cca.calc_cov_from_cross_cov_mats(high_d_cross_cov_mats)
     full_pi = cca.calc_pi_from_cov(cov_high_d)
-    
+
     embedding_cross_cov_mats = np.array([np.dot(U.T, np.dot(C, U)) for C in high_d_cross_cov_mats])
     cov_embedding = cca.calc_cov_from_cross_cov_mats(embedding_cross_cov_mats)
     embedding_pi = cca.calc_pi_from_cov(cov_embedding)
-    
-    return X, U, full_pi, embedding_pi
 
-    
-    
-    
+    return X, U , full_pi, embedding_pi

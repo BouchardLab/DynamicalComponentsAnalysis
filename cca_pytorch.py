@@ -125,7 +125,7 @@ def ortho_reg_fn(V, lambda_param):
     return reg_val
 
 
-def build_loss(cross_cov_mats, d, lambda_param=10):
+def build_loss(cross_cov_mats, d, lambda_param=10, device='cuda:0', dtype=torch.float64):
     """Constructs a loss function which gives the (negative) predictive information
     in the projection of multidimensional timeseries data X onto a d-dimensional
     basis, where predictive information is computed using a stationary Gaussian
@@ -149,10 +149,10 @@ def build_loss(cross_cov_mats, d, lambda_param=10):
 
     N = cross_cov_mats.shape[1] #or cross_cov_mats.shape[2]
     if not isinstance(cross_cov_mats, torch.Tensor):
-        cross_cov_mats = torch.tensor(cross_cov_mats, device='cuda:0', dtype=torch.float64)
+        cross_cov_mats = torch.tensor(cross_cov_mats, device=device, dtype=dtype)
     def loss(V_flat):
         if not isinstance(V_flat, torch.Tensor):
-            V_flat = torch.tensor(V_flat, device='cuda:0', dtype=torch.float64)
+            V_flat = torch.tensor(V_flat, device=device, dtype=torch.float64)
         V = V_flat.reshape(N, d)
         reg_val = ortho_reg_fn(V, lambda_param)
         return -calc_pi_from_cross_cov_mats(cross_cov_mats, V) + reg_val
@@ -194,8 +194,8 @@ def run_cca(cross_cov_mats, d, init="random", tol=1e-6,
     elif type(init) == np.ndarray:
         V_init = init
 
-    v = torch.tensor(V_init, requires_grad=True, device='cuda:0', dtype=torch.float64)
-    c = torch.tensor(cross_cov_mats, device='cuda:0', dtype=torch.float64)
+    v = torch.tensor(V_init, requires_grad=True, device=device, dtype=dtype)
+    c = torch.tensor(cross_cov_mats, device=device, dtype=dtype)
 
     optimizer = torch.optim.LBFGS([v], max_eval=15000, max_iter=15000)
 

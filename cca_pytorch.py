@@ -157,7 +157,8 @@ def build_loss(cross_cov_mats, d, lambda_param=10):
     return loss
 
 
-def run_cca(cross_cov_mats, d, init="random", method="BFGS", tol=1e-6, lambda_param=10, verbose=False):
+def run_cca(cross_cov_mats, d, init="random", method="BFGS", tol=1e-6,
+            lambda_param=10, verbose=False, device="cuda:0", dtype=torch.float64):
     """Runs CCA on multidimensional timeseries data X to discover a projection
     onto a d-dimensional subspace which maximizes the complexity of the d-dimensional
     dynamics.
@@ -177,23 +178,7 @@ def run_cca(cross_cov_mats, d, init="random", method="BFGS", tol=1e-6, lambda_pa
     V_opt: np.ndarray, shape (N, d)
         Projection matrix.
     """
-
-    loss = build_loss(cross_cov_mats, d, lambda_param=lambda_param)
-    grad_loss = grad(loss)
-
-    N = cross_cov_mats.shape[1] #or cross_cov_mats.shape[2]
-
-    if verbose:
-        def callback(V_flat):
-            loss_val = loss(V_flat)
-            V = V_flat.reshape((N, d))
-            reg_val = ortho_reg_fn(V, lambda_param)
-            loss_no_reg = loss_val - reg_val
-            pi = -loss_no_reg
-            print("PI = " + str(np.round(pi, 4)) + " bits, reg = " + str(np.round(reg_part, 4)))
-    else:
-        callback = None
-
+    N = cross_cov_mats.shape[1]
     if type(init) == str:
         if init == "random":
             V_init = np.random.normal(0, 1, (N, d))
@@ -206,11 +191,26 @@ def run_cca(cross_cov_mats, d, init="random", method="BFGS", tol=1e-6, lambda_pa
     elif type(init) == np.ndarray:
         V_init = init
 
-    opt_result = scipy.optimize.minimize(loss, V_init.flatten(), method=method, jac=grad_loss, callback=callback, tol=tol)
-    V_opt_flat = opt_result["x"]
-    V_opt = V_opt_flat.reshape((N, d))
+    v = torch.tensor(V_init, requires_grad=True, device='cuda:0', dtype=torch.float64)
+    c = torch.tensor(cross_cov_mats, device='cuda:0', dtype=torch.float64)
+
+    optimizer = torch.optim.LBFGS([v], max_eval=15000, max_iter=15000)
+
+    def closure():
+        optimizer.zero_grad()
+        loss = build_loss(c, d)(v)
+        loss.backward()
+        if verbose:
+            reg_val = ortho_reg_fn(v, lambda_param)
+            loss_no_reg = loss_val - reg_val
+            pi = -loss_no_reg
+            print("PI = " + str(np.round(pi, 4)) + " bits, reg = " +
+                  str(np.round(reg_val, 4)))
+        return loss
+
+    optimizer.step(closure)
 
     #Orhtonormalize the basis prior to returning it
-    V_opt = scipy.linalg.orth(V_opt)
+    V_opt = scipy.linalg.orth(v.data.cpu().numpy())
 
     return V_opt

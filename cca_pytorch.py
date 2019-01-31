@@ -2,10 +2,6 @@ import numpy as np
 import scipy.stats
 
 import torch
-dtype = torch.float
-device = torch.device("cuda:0")
-torch.set_default_tensor_type(torch.cuda.DoubleTensor)
-
 
 
 def calc_cov_from_cross_cov_mats(cross_cov_mats):
@@ -105,7 +101,7 @@ def calc_pi_from_cross_cov_mats(cross_cov_mats, proj=None):
     return PI
 
 
-def ortho_reg_fn(V, lambda_param):
+def ortho_reg_fn(V, lambda_param, device='cuda:0', dtype=torch.float64):
     """Regularization term which encourages the basis vectors in the
     columns of V to be orthonormal.
     Parameters
@@ -121,11 +117,12 @@ def ortho_reg_fn(V, lambda_param):
     """
 
     d = V.shape[1]
-    reg_val = lambda_param * torch.sum((torch.mm(V.t(), V) - torch.eye(d, dtype=torch.float64))**2)
+    reg_val = lambda_param * torch.sum((torch.mm(V.t(), V) -
+                                        torch.eye(d, device=device, dtype=dtype))**2)
     return reg_val
 
 
-def build_loss(cross_cov_mats, d, lambda_param=10):
+def build_loss(cross_cov_mats, d, lambda_param=10, device='cuda:0', dtype=torch.float64):
     """Constructs a loss function which gives the (negative) predictive information
     in the projection of multidimensional timeseries data X onto a d-dimensional
     basis, where predictive information is computed using a stationary Gaussian
@@ -148,16 +145,20 @@ def build_loss(cross_cov_mats, d, lambda_param=10):
     """
 
     N = cross_cov_mats.shape[1] #or cross_cov_mats.shape[2]
+    if not isinstance(cross_cov_mats, torch.Tensor):
+        cross_cov_mats = torch.tensor(cross_cov_mats, device=device, dtype=dtype)
     def loss(V_flat):
-
+        if not isinstance(V_flat, torch.Tensor):
+            V_flat = torch.tensor(V_flat, device=device, dtype=dtype)
         V = V_flat.reshape(N, d)
-        reg_val = ortho_reg_fn(V, lambda_param)
+        reg_val = ortho_reg_fn(V, lambda_param, device=device, dtype=dtype)
         return -calc_pi_from_cross_cov_mats(cross_cov_mats, V) + reg_val
 
     return loss
 
 
-def run_cca(cross_cov_mats, d, init="random", method="BFGS", tol=1e-6, lambda_param=10, verbose=False):
+def run_cca(cross_cov_mats, d, init="random", tol=1e-6,
+            lambda_param=10., verbose=False, device="cuda:0", dtype=torch.float64):
     """Runs CCA on multidimensional timeseries data X to discover a projection
     onto a d-dimensional subspace which maximizes the complexity of the d-dimensional
     dynamics.
@@ -177,27 +178,10 @@ def run_cca(cross_cov_mats, d, init="random", method="BFGS", tol=1e-6, lambda_pa
     V_opt: np.ndarray, shape (N, d)
         Projection matrix.
     """
-
-    loss = build_loss(cross_cov_mats, d, lambda_param=lambda_param)
-    grad_loss = grad(loss)
-
-    N = cross_cov_mats.shape[1] #or cross_cov_mats.shape[2]
-
-    if verbose:
-        def callback(V_flat):
-            loss_val = loss(V_flat)
-            V = V_flat.reshape((N, d))
-            reg_val = ortho_reg_fn(V, lambda_param)
-            loss_no_reg = loss_val - reg_val
-            pi = -loss_no_reg
-            print("PI = " + str(np.round(pi, 4)) + " bits, reg = " + str(np.round(reg_part, 4)))
-    else:
-        callback = None
-
+    N = cross_cov_mats.shape[1]
     if type(init) == str:
         if init == "random":
             V_init = np.random.normal(0, 1, (N, d))
-            V_init = V_init / np.sqrt(np.sum(V_init**2, axis=0))
         if init == "random_ortho":
             V_init = scipy.stats.ortho_group.rvs(N)[:, :d]
         if init == "uniform":
@@ -205,12 +189,30 @@ def run_cca(cross_cov_mats, d, init="random", method="BFGS", tol=1e-6, lambda_pa
             V_init = V_init + np.random.normal(0, 1e-3, V_init.shape)
     elif type(init) == np.ndarray:
         V_init = init
+    else:
+        raise ValueError
+    V_init /= np.linalg.norm(V_init, axis=0, keepdims=True)
 
-    opt_result = scipy.optimize.minimize(loss, V_init.flatten(), method=method, jac=grad_loss, callback=callback, tol=tol)
-    V_opt_flat = opt_result["x"]
-    V_opt = V_opt_flat.reshape((N, d))
+    v = torch.tensor(V_init, requires_grad=True, device=device, dtype=dtype)
+    c = torch.tensor(cross_cov_mats, device=device, dtype=dtype)
+
+    optimizer = torch.optim.LBFGS([v], max_eval=15000, max_iter=15000)
+
+    def closure():
+        optimizer.zero_grad()
+        loss = build_loss(c, d, device=device, dtype=dtype)(v)
+        loss.backward()
+        if verbose:
+            reg_val = ortho_reg_fn(v, lambda_param, device=device, dtype=dtype)
+            loss_no_reg = loss - reg_val
+            pi = -loss_no_reg
+            print("PI = " + str(np.round(pi.detach().cpu().numpy(), 4)) + " bits, reg = " +
+                  str(np.round(reg_val.detach().cpu().numpy(), 4)))
+        return loss
+
+    optimizer.step(closure)
 
     #Orhtonormalize the basis prior to returning it
-    V_opt = scipy.linalg.orth(V_opt)
+    V_opt = scipy.linalg.orth(v.detach().cpu().numpy())
 
     return V_opt

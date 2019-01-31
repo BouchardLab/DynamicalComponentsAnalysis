@@ -2,6 +2,7 @@ import numpy as np
 import scipy
 import cca
 
+
 def gen_gp_cov(T, N, kernel):
     """Generates a N*T-by-N*T covariance matrix for a spatiotemporal Gaussian
     process (2D Gaussian random field) with a provided kernel.

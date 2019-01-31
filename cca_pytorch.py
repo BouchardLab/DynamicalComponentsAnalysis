@@ -105,7 +105,7 @@ def calc_pi_from_cross_cov_mats(cross_cov_mats, proj=None):
     return PI
 
 
-def ortho_reg_fn(V, lambda_param):
+def ortho_reg_fn(V, lambda_param, dtype=torch.float64):
     """Regularization term which encourages the basis vectors in the
     columns of V to be orthonormal.
     Parameters
@@ -121,7 +121,7 @@ def ortho_reg_fn(V, lambda_param):
     """
 
     d = V.shape[1]
-    reg_val = lambda_param * torch.sum((torch.mm(V.t(), V) - torch.eye(d, dtype=torch.float64))**2)
+    reg_val = lambda_param * torch.sum((torch.mm(V.t(), V) - torch.eye(d, dtype=dtype))**2)
     return reg_val
 
 

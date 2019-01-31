@@ -101,7 +101,7 @@ def calc_pi_from_cross_cov_mats(cross_cov_mats, proj=None):
     return PI
 
 
-def ortho_reg_fn(V, lambda_param, dtype=torch.float64):
+def ortho_reg_fn(V, lambda_param, device='cuda:0', dtype=torch.float64):
     """Regularization term which encourages the basis vectors in the
     columns of V to be orthonormal.
     Parameters
@@ -117,7 +117,8 @@ def ortho_reg_fn(V, lambda_param, dtype=torch.float64):
     """
 
     d = V.shape[1]
-    reg_val = lambda_param * torch.sum((torch.mm(V.t(), V) - torch.eye(d, dtype=dtype))**2)
+    reg_val = lambda_param * torch.sum((torch.mm(V.t(), V) -
+                                        torch.eye(d, device=device, dtype=dtype))**2)
     return reg_val
 
 
@@ -150,7 +151,7 @@ def build_loss(cross_cov_mats, d, lambda_param=10, device='cuda:0', dtype=torch.
         if not isinstance(V_flat, torch.Tensor):
             V_flat = torch.tensor(V_flat, device=device, dtype=dtype)
         V = V_flat.reshape(N, d)
-        reg_val = ortho_reg_fn(V, lambda_param)
+        reg_val = ortho_reg_fn(V, lambda_param, device=device, dtype=dtype)
         return -calc_pi_from_cross_cov_mats(cross_cov_mats, V) + reg_val
 
     return loss
@@ -181,7 +182,6 @@ def run_cca(cross_cov_mats, d, init="random", tol=1e-6,
     if type(init) == str:
         if init == "random":
             V_init = np.random.normal(0, 1, (N, d))
-            V_init = V_init / np.sqrt(np.sum(V_init**2, axis=0))
         if init == "random_ortho":
             V_init = scipy.stats.ortho_group.rvs(N)[:, :d]
         if init == "uniform":
@@ -189,6 +189,9 @@ def run_cca(cross_cov_mats, d, init="random", tol=1e-6,
             V_init = V_init + np.random.normal(0, 1e-3, V_init.shape)
     elif type(init) == np.ndarray:
         V_init = init
+    else:
+        raise ValueError
+    V_init /= np.linalg.norm(V_init, axis=0, keepdims=True)
 
     v = torch.tensor(V_init, requires_grad=True, device=device, dtype=dtype)
     c = torch.tensor(cross_cov_mats, device=device, dtype=dtype)
@@ -197,10 +200,10 @@ def run_cca(cross_cov_mats, d, init="random", tol=1e-6,
 
     def closure():
         optimizer.zero_grad()
-        loss = build_loss(c, d)(v)
+        loss = build_loss(c, d, device=device, dtype=dtype)(v)
         loss.backward()
         if verbose:
-            reg_val = ortho_reg_fn(v, lambda_param)
+            reg_val = ortho_reg_fn(v, lambda_param, device=device, dtype=dtype)
             loss_no_reg = loss - reg_val
             pi = -loss_no_reg
             print("PI = " + str(np.round(pi.detach().cpu().numpy(), 4)) + " bits, reg = " +

@@ -332,7 +332,7 @@ def run_cca(cross_cov_mats, d, init="random", method="BFGS", tol=1e-6, lambda_pa
     else:
         callback = None
 
-    if type(init) == str:
+    if isinstance(init, str):
         if init == "random":
             V_init = np.random.normal(0, 1, (N, d))
             V_init = V_init / np.sqrt(np.sum(V_init**2, axis=0))
@@ -341,8 +341,10 @@ def run_cca(cross_cov_mats, d, init="random", method="BFGS", tol=1e-6, lambda_pa
         if init == "uniform":
             V_init = np.ones((N, d))/np.sqrt(N)
             V_init = V_init + np.random.normal(0, 1e-3, V_init.shape)
-    elif type(init) == np.ndarray:
+    elif isinstance(init, np.ndarray):
         V_init = init
+    else:
+        raise ValueError
 
     opt_result = scipy.optimize.minimize(loss, V_init.flatten(), method=method, jac=grad_loss, callback=callback, tol=tol)
     V_opt_flat = opt_result["x"]

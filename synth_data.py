@@ -58,7 +58,7 @@ def calc_pi_for_gp(T, N, kernel):
     return PI
 
 
-def gen_kernel(kernel_type, spatial_scale, temporal_scale):
+def gen_gp_kernel(kernel_type, spatial_scale, temporal_scale):
     """Generates a specified type of Kernel for a spatiotemporal Gaussian
     process.
     Parameters
@@ -160,3 +160,74 @@ def embed_gp(T, N, d, kernel, noise_cov, T_pi, num_to_concat=1):
     embedding_pi = cca.calc_pi_from_cov(cov_embedding)
 
     return X, U , full_pi, embedding_pi
+
+
+def gen_lorenz_system(T, integration_dt, data_dt):
+	#Period ~ 1 unit of time
+	#So make sure integration_dt << 1
+
+	#Known-to-be-good chaotic parameters
+	#See sussillo LFADs paper
+	rho = 28.0
+	sigma = 10.0
+	beta = 8/3
+
+	def dx_dt(state, t):
+	    x, y, z = state
+	    x_dot = sigma * (y - x)
+	    y_dot = x * (rho - z) - y
+	    z_dot = x * y - beta * z
+	    return (x_dot, y_dot, z_dot)
+
+	x_0 = np.ones(3)    
+	t = np.arange(0, T, integration_dt)
+	X = scipy.integrate.odeint(dx_dt, x_0, t)
+
+	skip = int(np.round(data_dt / integration_dt))
+	X_downsampled = X[::skip, :]
+
+	return X_downsampled
+
+def embed_lorenz_system(T, integration_dt, data_dt, N, noise_cov):
+
+	#Latent dynamics
+    Y = gen_lorenz_system(T, integration_dt, data_dt)
+
+    #Random orthogonal embedding matrix U
+    U = scipy.stats.ortho_group.rvs(N)[:, :3]
+
+    #Data matrix X
+    X = np.dot(Y, U.T)
+
+    #Corrupt data by spatially structured white noise
+    X += np.random.multivariate_normal(mean=np.zeros(N), cov=noise_cov, size=len(X))
+
+    return X
+
+def gen_chaotic_rnn(N, T, integration_dt, data_dt, x_0=None, noise_cov=None):
+
+	#Time constants from LFADS paper chaotic RNN
+	tau = 0.025
+	gamma = 2.5
+
+	#Weight variance ~1/N
+	W = np.random.normal(0, 1/np.sqrt(N), (N, N))
+
+	def dx_dt(y, t):
+		y_dot = (1/tau)*(-y + gamma*np.dot(W, np.tanh(y)))
+		return y_dot
+
+	if not isinstance(x_0, np.ndarray):
+		x_0 = np.random.normal(0, 1, N)
+
+	t = np.arange(0, T, integration_dt)
+	X = scipy.integrate.odeint(dx_dt, x_0, t)
+
+	skip = int(np.round(data_dt / integration_dt))
+	X_downsampled = X[::skip, :]
+	X = X_downsampled
+
+	if isinstance(noise_cov, np.ndarray):
+		X += np.random.multivariate_normal(mean=np.zeros(N), cov=noise_cov, size=len(X))
+
+	return X

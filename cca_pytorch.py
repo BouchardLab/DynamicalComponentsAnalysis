@@ -2,10 +2,6 @@ import numpy as np
 import scipy.stats
 
 import torch
-dtype = torch.float
-device = torch.device("cuda:0")
-torch.set_default_tensor_type(torch.cuda.DoubleTensor)
-
 
 
 def calc_cov_from_cross_cov_mats(cross_cov_mats):
@@ -152,7 +148,7 @@ def build_loss(cross_cov_mats, d, lambda_param=10, device='cuda:0', dtype=torch.
         cross_cov_mats = torch.tensor(cross_cov_mats, device=device, dtype=dtype)
     def loss(V_flat):
         if not isinstance(V_flat, torch.Tensor):
-            V_flat = torch.tensor(V_flat, device=device, dtype=torch.float64)
+            V_flat = torch.tensor(V_flat, device=device, dtype=dtype)
         V = V_flat.reshape(N, d)
         reg_val = ortho_reg_fn(V, lambda_param)
         return -calc_pi_from_cross_cov_mats(cross_cov_mats, V) + reg_val

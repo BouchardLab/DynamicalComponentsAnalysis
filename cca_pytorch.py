@@ -148,8 +148,11 @@ def build_loss(cross_cov_mats, d, lambda_param=10):
     """
 
     N = cross_cov_mats.shape[1] #or cross_cov_mats.shape[2]
+    if not isinstance(cross_cov_mats, torch.Tensor):
+        cross_cov_mats = torch.tensor(cross_cov_mats, device='cuda:0', dtype=torch.float64)
     def loss(V_flat):
-
+        if not isinstance(V_flat, torch.Tensor):
+            V_flat = torch.tensor(V_flat, device='cuda:0', dtype=torch.float64)
         V = V_flat.reshape(N, d)
         reg_val = ortho_reg_fn(V, lambda_param)
         return -calc_pi_from_cross_cov_mats(cross_cov_mats, V) + reg_val
@@ -157,8 +160,8 @@ def build_loss(cross_cov_mats, d, lambda_param=10):
     return loss
 
 
-def run_cca(cross_cov_mats, d, init="random", method="BFGS", tol=1e-6,
-            lambda_param=10, verbose=False, device="cuda:0", dtype=torch.float64):
+def run_cca(cross_cov_mats, d, init="random", tol=1e-6,
+            lambda_param=10., verbose=False, device="cuda:0", dtype=torch.float64):
     """Runs CCA on multidimensional timeseries data X to discover a projection
     onto a d-dimensional subspace which maximizes the complexity of the d-dimensional
     dynamics.
@@ -202,15 +205,15 @@ def run_cca(cross_cov_mats, d, init="random", method="BFGS", tol=1e-6,
         loss.backward()
         if verbose:
             reg_val = ortho_reg_fn(v, lambda_param)
-            loss_no_reg = loss_val - reg_val
+            loss_no_reg = loss - reg_val
             pi = -loss_no_reg
-            print("PI = " + str(np.round(pi, 4)) + " bits, reg = " +
-                  str(np.round(reg_val, 4)))
+            print("PI = " + str(np.round(pi.detach().cpu().numpy(), 4)) + " bits, reg = " +
+                  str(np.round(reg_val.detach().cpu().numpy(), 4)))
         return loss
 
     optimizer.step(closure)
 
     #Orhtonormalize the basis prior to returning it
-    V_opt = scipy.linalg.orth(v.data.cpu().numpy())
+    V_opt = scipy.linalg.orth(v.detach().cpu().numpy())
 
     return V_opt

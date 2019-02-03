@@ -44,6 +44,14 @@ def calc_cross_cov_mats_from_data(X, num_lags, regularization=None, reg_ops=None
             cross_cov = np2.dot(X[delta_t:].T, X[:len(X)-delta_t])/(len(X) - delta_t - 1)
             cross_cov_mats[delta_t] = cross_cov
 
+        cov = calc_cov_from_cross_cov_mats(cross_cov_mats)
+        print(np2.sum(np2.abs(cov.T - cov)))
+        w, _ = np2.linalg.eigh(cov)
+        min_eig = np2.min(w)
+        if min_eig <= 0:
+            print(min_eig)
+            cross_cov_mats[0] += np2.eye(N)*(1e-8 - min_eig)
+
         return cross_cov_mats
 
     elif regularization == "Abadir":
@@ -112,6 +120,15 @@ def calc_cross_cov_mats_from_data(X, num_lags, regularization=None, reg_ops=None
         #Thus, we average over the cross-covariance sub-matrices for
         #constant |t1-t2|
         cross_cov_mats = calc_cross_cov_mats_from_cov(N, num_lags, final_cov_est)
+
+        cov = calc_cov_from_cross_cov_mats(cross_cov_mats)
+        print(np2.sum(np2.abs(cov.T - cov)))
+        w, _ = np2.linalg.eigh(cov)
+        min_eig = np2.min(w)
+        if min_eig <= 0:
+            print(min_eig)
+            cross_cov_mats[0] += np2.eye(N)*(1e-8 - min_eig)
+
         return cross_cov_mats
 
 
@@ -288,7 +305,7 @@ def build_loss(cross_cov_mats, d, lambda_param=10):
     N = cross_cov_mats.shape[1] #or cross_cov_mats.shape[2]
     def loss(V_flat):
 
-        V = V_flat.reshape(N, d)
+        V = np.reshape(V_flat, (N, d))
         reg_val = ortho_reg_fn(V, lambda_param)
         return -calc_pi_from_cross_cov_mats(cross_cov_mats, V) + reg_val
 

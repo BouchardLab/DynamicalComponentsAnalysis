@@ -18,17 +18,17 @@ class SlowFeatureAnalysis(object):
 
         Parameters
         ----------
-        X : ndarray (features, time)
+        X : ndarray (time, features)
             Data to fit SFA model to.
         """
-        X_stan = X - X.mean(axis=1, keepdims=True)
+        X_stan = X - X.mean(axis=0, keepdims=True)
         uX, sX, vhX = np.linalg.svd(X_stan)
-        whiten = np.diag(1./sX).dot(uX.T)
-        Xw = whiten.dot(X_stan)
-        Xp = np.diff(Xw, axis=1)
+        whiten = vhX.T @ np.diag(1./sX)
+        Xw = X_stan @ whiten
+        Xp = np.diff(Xw, axis=0)
         up, sp, vhp = np.linalg.svd(Xp, full_matrices=False)
-        proj = up.T
-        self.coef_ = proj.dot(whiten)[::-1][:self.n_components]
+        proj = vhp.T
+        self.coef_ = whiten @ proj[:, ::-1][:, :self.n_components]
 
     def transform(self, X):
         """Transform the data according to the fit SFA model.
@@ -40,7 +40,7 @@ class SlowFeatureAnalysis(object):
         """
         if self.coef_ is None:
             raise ValueError
-        return self.coef_.dot(X)
+        return X @ self.coef_
 
     def fit_transform(self, X):
         """Fit the SFA model and transform the features.
@@ -51,4 +51,4 @@ class SlowFeatureAnalysis(object):
             Data to fit SFA model to and then transformk.
         """
         self.fit(X)
-        return self.coef_.dot(X)
+        return X @ self.coef_

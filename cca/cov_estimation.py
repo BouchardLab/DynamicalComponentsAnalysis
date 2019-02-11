@@ -1,6 +1,8 @@
 import numpy as np
 import scipy as sp
 
+from .kron_pca import prox_grad_robust_toeplitz_kron_pca
+
 def calc_cross_cov_mats_from_data(X, num_lags, regularization=None, reg_ops=None):
     """Calculates N-by-N cross-covariance matrices for time lags
     up to num_lags - 1, where N is the dimensionality of the time
@@ -32,7 +34,7 @@ def calc_cross_cov_mats_from_data(X, num_lags, regularization=None, reg_ops=None
     X = X - np.mean(X, axis=0)
     N = X.shape[1]
 
-    if type(regularization) == type(None):
+    if regularization is None:
 
         #Compute N-by-N cross-covariance matrices for all 0<=delta_t<=num_lags-1
         cross_cov_mats = np.zeros((num_lags, N, N))
@@ -40,15 +42,7 @@ def calc_cross_cov_mats_from_data(X, num_lags, regularization=None, reg_ops=None
             cross_cov = np.dot(X[delta_t:].T, X[:len(X)-delta_t])/(len(X) - delta_t - 1)
             cross_cov_mats[delta_t] = cross_cov
 
-        cov = calc_cov_from_cross_cov_mats(cross_cov_mats)
-        print(np.sum(np.abs(cov.T - cov)))
-        w, _ = np.linalg.eigh(cov)
-        min_eig = np.min(w)
-        if min_eig <= 0:
-            print(min_eig)
-            cross_cov_mats[0] += np.eye(N)*(1e-8 - min_eig)
-
-        return cross_cov_mats
+        cov_est = calc_cov_from_cross_cov_mats(cross_cov_mats)
 
     elif regularization == "Abadir":
 
@@ -66,6 +60,7 @@ def calc_cross_cov_mats_from_data(X, num_lags, regularization=None, reg_ops=None
         X_with_lags = np.zeros((n, N*num_lags))
         for i in range(n):
             X_with_lags[i, :] = X[i*skip:i*skip+num_lags].flatten()
+        X_with_lags -= X_with_lags.mean(axis=0, keepdims=True)
 
         #Holds all M*S cov estimates
         results = np.zeros((M, S, N*num_lags, N*num_lags))
@@ -94,7 +89,7 @@ def calc_cross_cov_mats_from_data(X, num_lags, regularization=None, reg_ops=None
 
                 #diagonalize X_1
                 cov_1 = np.dot(X_1.T, X_1)/(m - 1)
-                w_1, V_1 = scipy.linalg.eigh(cov_1)
+                w_1, V_1 = sp.linalg.eigh(cov_1)
                 w_1, V_1 = w_1[::-1], V_1[:, ::-1]
 
                 #project X_2 onto eigenvectors of X_1
@@ -109,23 +104,35 @@ def calc_cross_cov_mats_from_data(X, num_lags, regularization=None, reg_ops=None
                 #store the result
                 results[m_idx, sample_idx, :, :] = cov_est
 
-        final_cov_est = np.mean(results, axis=(0, 1))
+        cov_est = np.mean(results, axis=(0, 1))
 
         #Note final_cov_est will not be stationary, since stationarity
         #is not preserved by the regularization technique.
         #Thus, we average over the cross-covariance sub-matrices for
         #constant |t1-t2|
         cross_cov_mats = calc_cross_cov_mats_from_cov(N, num_lags, final_cov_est)
+        cov_est = calc_cov_from_cross_cov_mats(cross_cov_mats)
+
+    elif regularization == 'kron':
+        #Compute N-by-N cross-covariance matrices for all 0<=delta_t<=num_lags-1
+        cross_cov_mats = np.zeros((num_lags, N, N))
+        for delta_t in range(num_lags):
+            cross_cov = np.dot(X[delta_t:].T, X[:len(X)-delta_t])/(len(X) - delta_t - 1)
+            cross_cov_mats[delta_t] = cross_cov
 
         cov = calc_cov_from_cross_cov_mats(cross_cov_mats)
-        print(np.sum(np.abs(cov.T - cov)))
-        w, _ = np.linalg.eigh(cov)
-        min_eig = np.min(w)
-        if min_eig <= 0:
-            print(min_eig)
-            cross_cov_mats[0] += np.eye(N)*(1e-8 - min_eig)
+        cov_est = prox_grad_robust_toeplitz_kron_pca(cov, N, num_lags,
+                                                 reg_ops['lambda_L'],
+                                                 reg_ops['lambda_S'],
+                                                 reg_ops['num_iter'],
+                                                 reg_ops['tau'])
+        cross_cov_mats = calc_cross_cov_mats_from_cov(N, num_lags, cov_est)
 
-        return cross_cov_mats
+    w, _ = np.linalg.eigh(cov_est)
+    min_eig = np.min(w)
+    if min_eig <= 0:
+        cross_cov_mats[0] += np.eye(N)*(1e-8 - min_eig)
+    return cross_cov_mats
 
 
 def calc_cross_cov_mats_from_cov(N, num_lags, cov):
@@ -157,3 +164,34 @@ def calc_cross_cov_mats_from_cov(N, num_lags, cov):
             to_avg_upper[i, :, :] = cov[i*N:(i+1)*N, i_offset+i*N:i_offset+(i+1)*N]
         cross_cov_mats[delta_t, :, :] = 0.5*(np.mean(to_avg_lower, axis=0) + np.mean(to_avg_upper, axis=0))
     return cross_cov_mats
+
+def calc_cov_from_cross_cov_mats(cross_cov_mats):
+    """Calculates the N*num_lags-by-N*num_lags spatiotemporal covariance matrix
+    based on num_lags N-by-N cross-covariance matrices.
+    Parameters
+    ----------
+    cross_cov_mats : np.ndarray, shape (num_lags, N, N)
+        Cross-covariance matrices: cross_cov_mats[dt] is the
+        cross-covariance between X(t) and X(t+dt), where each
+        of X(t) and X(t+dt) is a N-dimensional vector.
+    Returns
+    -------
+    cov : np.ndarray, shape (N*num_lags, N*num_lags)
+        Big covariance matrix, stationary in time by construction.
+    """
+
+    N = cross_cov_mats.shape[1] #or cross_cov_mats.shape[2]
+    num_lags = len(cross_cov_mats)
+
+    cross_cov_mats_repeated = []
+    for i in range(num_lags):
+        for j in range(num_lags):
+            if i > j:
+                cross_cov_mats_repeated.append(cross_cov_mats[abs(i-j)])
+            else:
+                cross_cov_mats_repeated.append(cross_cov_mats[abs(i-j)].T)
+
+    cov_tensor = np.reshape(np.array(cross_cov_mats_repeated), (num_lags, num_lags, N, N))
+    cov = np.concatenate([np.concatenate(cov_ii, axis=1) for cov_ii in cov_tensor])
+
+    return cov

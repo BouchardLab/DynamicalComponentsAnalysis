@@ -77,7 +77,7 @@ def pv_rearrange(C, ps, pt):
     """Given a ps*pt-by-ps*pt matrix C, Pitsianis-VanLoan rearrangement
     rearranges C into a pt^2-by-ps^2 matrix C_prime, where each
     row of C_prime is the vectorization of a ps-by-ps submatrix of C.
-    
+
     For example, if
     C = [[A_11, A_12],
          [A_21, A_22]]

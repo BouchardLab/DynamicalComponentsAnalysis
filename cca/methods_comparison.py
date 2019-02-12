@@ -1,6 +1,9 @@
 import numpy as np
 
 
+__all__ = ['SlowFeatureAnalysis']
+
+
 class SlowFeatureAnalysis(object):
     """Slow Feature Analysis (SFA)
 

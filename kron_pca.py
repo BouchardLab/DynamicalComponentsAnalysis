@@ -303,6 +303,14 @@ def prox_grad_robust_toeplitz_kron_pca(sample_cov, ps, pt, lambda_L, lambda_S, n
         
         M_tilde_prev, S_tilde_prev, L_tilde_prev = M_tilde, S_tilde, L_tilde
         
+    #rank = np.linalg.matrix_rank(L_tilde)
+    U, s, Vh = scipy.linalg.svd(L_tilde)
+    pve = np.cumsum(s)/np.sum(s)
+    eff_rank = np.argmax(pve >= 0.95) + 1
+    rank = eff_rank
+    #rank = np.sum(s)**2/np.sum(s**2)
+    sparsity = np.sum(np.nonzero(S_tilde))/S_tilde.size
+
     cov_est = pv_rearrange_inv(np.dot(P.T, L_tilde + S_tilde), ps, pt)
-    return cov_est
+    return cov_est, rank, sparsity
 

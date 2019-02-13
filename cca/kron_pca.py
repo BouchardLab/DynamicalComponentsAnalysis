@@ -249,7 +249,7 @@ def build_P(pt):
         P[offset+pt-1, diag_idx-1] = 1/np.sqrt(pt - np.abs(offset))
     return P
 
-def prox_grad_robust_toeplitz_kron_pca(sample_cov, ps, pt, lambda_L, lambda_S, num_iter, tau):
+def prox_grad_robust_toeplitz_kron_pca(sample_cov, ps, pt, lambda_L, lambda_S, num_iter, tau, return_rank_and_sparsity=False):
     """Proximal Gradient algorithm for Robust KronPCA
     (Algorithm 1 from Greenewald et al.).
 
@@ -304,8 +304,12 @@ def prox_grad_robust_toeplitz_kron_pca(sample_cov, ps, pt, lambda_L, lambda_S, n
 
         M_tilde_prev, S_tilde_prev, L_tilde_prev = M_tilde, S_tilde, L_tilde
 
-    rank = np.linalg.matrix_rank(L_tilde)
-    sparsity = np.sum(np.nonzero(S_tilde))/S_tilde.size
-
     cov_est = pv_rearrange_inv(np.dot(P.T, L_tilde + S_tilde), ps, pt)
-    return cov_est, rank, sparsity
+
+    if return_rank_and_sparsity:
+		rank = np.linalg.matrix_rank(L_tilde)
+		sparsity = np.sum(np.nonzero(S_tilde))/S_tilde.size
+		return cov_est, rank, sparsity
+
+	else:
+		return cov_est

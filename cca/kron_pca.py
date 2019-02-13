@@ -4,9 +4,9 @@ Implementation of 'Robust (Toeplitz) KronPCA from
 by Kristjan Greenewald and Alfred O. Hero.
 Link: https://arxiv.org/abs/1411.1352
 
-I faithfully implemented Algorithms 1 and 2 as described in on p. 14 of the 
+I faithfully implemented Algorithms 1 and 2 as described in on p. 14 of the
 manuscript. I'm not sure what Eq. 16 is trying to acomplish (it seems...wrong).
-My implemntation should do this step correctly (see 'build_p(pt)'). 
+My implemntation should do this step correctly (see 'build_p(pt)').
 """
 
 import numpy as np
@@ -46,18 +46,18 @@ def pv_permutation(ps, pt):
     """Permutation on {0, ..., ps^2*pt^2 - 1} corresponding to
     Pitsianis-VanLoan rearrangement. See pv_rearrange for more
     information on how Pitsianis-VanLoan rearrangement works.
-    
+
     Parameters
     ----------
     ps : int
         Number of spatial dimensions.
     pt : int
         Number of temporal dimensions.
-        
+
     Returns
     ----------
     perm : np.ndarray
-        perm[i] is the index which the i-th element of A.ravel() 
+        perm[i] is the index which the i-th element of A.ravel()
         gets sent to under Pitsianis-VanLoan rearrangement.
     perm_inv : np.ndarray
         The inverse of perm.
@@ -77,6 +77,7 @@ def pv_rearrange(C, ps, pt):
     """Given a ps*pt-by-ps*pt matrix C, Pitsianis-VanLoan rearrangement
     rearranges C into a pt^2-by-ps^2 matrix C_prime, where each
     row of C_prime is the vectorization of a ps-by-ps submatrix of C.
+
     For example, if
     C = [[A_11, A_12],
          [A_21, A_22]]
@@ -88,7 +89,7 @@ def pv_rearrange(C, ps, pt):
     Note that the arrangment of the ps-by-ps sub-matrices goes left-to-right
     on the block rows of C, while the vectorization operator goes top-to-bottom
     on the columns of each ps-by-ps sub-matrix.
-    
+
     Parameters
     ----------
     C : np.ndarray, shape (ps*pt, ps*pt)
@@ -97,7 +98,7 @@ def pv_rearrange(C, ps, pt):
         Number of spatial dimensions.
     pt : int
         Number of temporal dimensions.
-        
+
     Returns
     ----------
     C_prime : np.ndarray, shape (pt^2, ps^2)
@@ -109,7 +110,7 @@ def pv_rearrange(C, ps, pt):
 
 def pv_rearrange_inv(C, ps, pt):
     """Inverts the action of pv_rearrange.
-    
+
     Parameters
     ----------
     C : np.ndarray, shape (pt^2, ps^2)
@@ -118,7 +119,7 @@ def pv_rearrange_inv(C, ps, pt):
         Number of spatial dimensions.
     pt : int
         Number of temporal dimensions.
-        
+
     Returns
     ----------
     C_prime : np.ndarray, shape (ps*pt, ps*pt)
@@ -130,14 +131,14 @@ def pv_rearrange_inv(C, ps, pt):
 
 def soft_sv_threshold(M, lambda_param):
     """Soft singular value thresholding operator.
-    
+
     Parameters
     ----------
     M : np.ndarray, shape (m, n)
         Matrix whose singular values will be soft-thresholded.
     lambda_param : float
         How much to subtract from each singular value.
-        
+
     Returns
     ----------
     soft_thresholded_M : np.ndarray, shape (m, n)
@@ -150,14 +151,14 @@ def soft_sv_threshold(M, lambda_param):
 
 def soft_entrywise_threshold(M, lambda_param):
     """Entrywise soft thresholding operator.
-    
+
     Parameters
     ----------
     M : np.ndarray, shape (m, n)
         Matrix whose entries values will be soft-thresholded.
     lambda_param : float
         How much to subtract from each entry.
-        
+
     Returns
     ----------
     soft_thresholded_M : np.ndarray, shape (m, n)
@@ -168,8 +169,8 @@ def soft_entrywise_threshold(M, lambda_param):
 
 def prox_grad_robust_kron_pca(sample_cov, ps, pt, lambda_L, lambda_S, num_iter, tau):
     """Proximal Gradient algorithm for Robust KronPCA
-    (Algorithm 1 from Greenewald et al.). 
-    
+    (Algorithm 1 from Greenewald et al.).
+
     Parameters
     ----------
     sample_cov : np.ndarray, shape (ps*pt, ps*pt)
@@ -188,25 +189,25 @@ def prox_grad_robust_kron_pca(sample_cov, ps, pt, lambda_L, lambda_S, num_iter, 
     num_iter : int
         Number of iterations of gradient descent.
     tau : int OR np.ndarray, shape (num_iter,)
-        int case: Step size for th algorithm. 
+        int case: Step size for th algorithm.
         np.ndarray case: Schedule of step-size values for the algorithm.
-        
+
     Returns
     ----------
     cov_est : np.ndarray, shape (ps*pt, ps*pt)
         Robust KronPCA estiamte of the sample covariance matrix.
     """
     R = pv_rearrange(sample_cov, ps, pt)
-    
+
     L_prev = np.copy(R)
     S_prev = np.zeros(R.shape)
     M_prev = L_prev + S_prev
-    
+
     if not isinstance(tau, np.ndarray):
         tau_vals = np.ones(num_iter)*tau
     else:
         tau_vals = tau
-    
+
     for k in range(num_iter):
         tau = tau_vals[k]
 
@@ -215,26 +216,26 @@ def prox_grad_robust_kron_pca(sample_cov, ps, pt, lambda_L, lambda_S, num_iter, 
         M = L + S - tau*(L + S - R)
 
         M_prev, S_prev, L_prev = M, S, L
-        
+
     cov_est = pv_rearrange_inv(L + S, ps, pt)
     return cov_est
-    
+
 def build_P(pt):
     """Builds a matrix P which maps a pt^2-by-ps^2 PV-rearranged
     version of a matrix M to a (2*pt - 1)-by-ps^2 version of M
     corresponding to its `Toepletz-fied' PV-rearrangment. All of
     the rows of the PV-rearanged version of M which should be the
     same in a Toeplitz matrix are added together in a normalzied fashion.
-    
+
     Note that Greenewald et al. Eq. (16) is supposed to provide a means
     of building this matrix, but I have no clue that he was going for
     with that formula. The implementation here should be fine.
-    
+
     Parameters
     ----------
     pt : int
         Number of temporal dimensions.
-        
+
     Returns
     ----------
     P : np.ndarray, shape (2*ps - 1, ps^2)
@@ -250,8 +251,8 @@ def build_P(pt):
 
 def prox_grad_robust_toeplitz_kron_pca(sample_cov, ps, pt, lambda_L, lambda_S, num_iter, tau):
     """Proximal Gradient algorithm for Robust KronPCA
-    (Algorithm 1 from Greenewald et al.). 
-    
+    (Algorithm 1 from Greenewald et al.).
+
     Parameters
     ----------
     sample_cov : np.ndarray, shape (ps*pt, ps*pt)
@@ -270,9 +271,9 @@ def prox_grad_robust_toeplitz_kron_pca(sample_cov, ps, pt, lambda_L, lambda_S, n
     num_iter : int
         Number of iterations of gradient descent.
     tau : int OR np.ndarray, shape (num_iter,)
-        int case: Step size for th algorithm. 
+        int case: Step size for th algorithm.
         np.ndarray case: Schedule of step-size values for the algorithm.
-        
+
     Returns
     ----------
     cov_est : np.ndarray, shape (ps*pt, ps*pt)
@@ -281,18 +282,18 @@ def prox_grad_robust_toeplitz_kron_pca(sample_cov, ps, pt, lambda_L, lambda_S, n
     P = build_P(pt)
     R = pv_rearrange(sample_cov, ps, pt)
     R_tilde = np.dot(P, R)
-    
+
     L_tilde_prev = np.copy(R_tilde)
     S_tilde_prev = np.zeros(R_tilde.shape)
     M_tilde_prev = L_tilde_prev + S_tilde_prev
-    
+
     S_tilde = np.zeros(R_tilde.shape) #init so there's no error
-    
+
     if not isinstance(tau, np.ndarray):
         tau_vals = np.ones(num_iter)*tau
     else:
         tau_vals = tau
-        
+
     for k in range(num_iter):
         tau = tau_vals[k]
         L_tilde = soft_sv_threshold(M_tilde_prev - S_tilde_prev, tau*lambda_L)
@@ -300,17 +301,11 @@ def prox_grad_robust_toeplitz_kron_pca(sample_cov, ps, pt, lambda_L, lambda_S, n
             cj = 1./np.sqrt(pt - np.abs(j))
             S_tilde[j+pt-1] = soft_entrywise_threshold(M_tilde_prev[j+pt-1]-L_tilde_prev[j+pt-1], tau*lambda_S*cj)
         M_tilde = L_tilde + S_tilde - tau*(L_tilde + S_tilde - R_tilde)
-        
+
         M_tilde_prev, S_tilde_prev, L_tilde_prev = M_tilde, S_tilde, L_tilde
-        
-    #rank = np.linalg.matrix_rank(L_tilde)
-    U, s, Vh = scipy.linalg.svd(L_tilde)
-    pve = np.cumsum(s)/np.sum(s)
-    eff_rank = np.argmax(pve >= 0.95) + 1
-    rank = eff_rank
-    #rank = np.sum(s)**2/np.sum(s**2)
+
+    rank = np.linalg.matrix_rank(L_tilde)
     sparsity = np.sum(np.nonzero(S_tilde))/S_tilde.size
 
     cov_est = pv_rearrange_inv(np.dot(P.T, L_tilde + S_tilde), ps, pt)
     return cov_est, rank, sparsity
-

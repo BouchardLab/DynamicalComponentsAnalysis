@@ -1,6 +1,9 @@
 import numpy as np
 
 
+__all__ = ['SlowFeatureAnalysis']
+
+
 class SlowFeatureAnalysis(object):
     """Slow Feature Analysis (SFA)
 
@@ -22,7 +25,7 @@ class SlowFeatureAnalysis(object):
             Data to fit SFA model to.
         """
         X_stan = X - X.mean(axis=0, keepdims=True)
-        uX, sX, vhX = np.linalg.svd(X_stan)
+        uX, sX, vhX = np.linalg.svd(X_stan, full_matrices=False)
         whiten = vhX.T @ np.diag(1./sX)
         Xw = X_stan @ whiten
         Xp = np.diff(Xw, axis=0)
@@ -35,7 +38,7 @@ class SlowFeatureAnalysis(object):
 
         Parameters
         ----------
-        X : ndarray (features, time)
+        X : ndarray (time, features)
             Data to transform using the SFA model.
         """
         if self.coef_ is None:
@@ -47,7 +50,7 @@ class SlowFeatureAnalysis(object):
 
         Parameters
         ----------
-        X : ndarray (features, time)
+        X : ndarray (time, features)
             Data to fit SFA model to and then transformk.
         """
         self.fit(X)

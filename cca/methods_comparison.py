@@ -55,7 +55,7 @@ def log_likelihood(mu, sigma, y):
     cov_y = np.dot(y_minus_mean.T, y_minus_mean)
     log_likelihood = (-0.5*d*np.log(2*np.pi)
                       - 0.5*log_det_cov
-                      - 0.5*np.trace(np.dot(sigma, cov_y)))
+                      - 0.5*np.trace(np.dot(np.linalg.inv(sigma), cov_y)))
     return log_likelihood
 
 
@@ -102,19 +102,15 @@ class GaussianProcessFactorAnalysis(object):
         big_K = calc_big_K(T, self.n_factors, self.tau_, self.var_n)
         big_C = make_block_diag(self.C_, T)
         big_R = make_block_diag(self.R_, T)
+        y_cov = big_C.dot(big_K).dot(big_C.T) + big_R
+        big_d = np.tile(self.d_, T)
+        big_y = y.ravel()
+        ll = log_likelihood(big_d, y_cov, big_y)
+        if self.verbose:
+            print("log likelihood:", ll)
 
         for ii in range(self.max_iter):
             self._em_iter(y, big_K, big_C, big_R)
-        if self.verbose:
-            #Compute log likelihood under current params
-            big_C = make_block_diag(self.C_, T)
-            big_K = calc_big_K(T, self.n_factors, self.tau_, self.var_n)
-            big_R = make_block_diag(self.R_, T)
-            y_cov = big_C.dot(big_K).dot(big_C.T) + big_R
-            big_d = np.tile(self.d_, T)
-            big_y = y.ravel()
-            ll = log_likelihood(big_d, y_cov, big_y)
-            print("log likelihood:", ll)
         return self
 
     def _em_iter(self, y, big_K, big_C, big_R):
@@ -191,7 +187,6 @@ class GaussianProcessFactorAnalysis(object):
                 dEdKi = .5 *(-Ki_inv + Ki_inv.dot(xpx).dot(Ki_inv))
                 dKidti = var_f * (delta_t**2 / np.exp(lti)**3) * np.exp( - delta_t**2 / (2 * np.exp(lti)**2 ))
                 df[ii] = np.trace( np.dot(dEdKi.T, dKidti) ) * np.exp(lti)
-            print(-f)
 
             return -f, -df
 

@@ -17,10 +17,13 @@ def calc_K(tau, delta_t, var_n):
         rval += var_n
     return rval
 
-def calc_big_K(T, n_factors, tau, var_n):
+def calc_big_K(T, n_factors, tau, var_n, out=None):
     """Calculates the GP kernel autocorrelation for all latent factors.
     """
-    K = np.zeros((T * n_factors, T * n_factors))
+    if out is None:
+        K = np.zeros((T * n_factors, T * n_factors))
+    else:
+        K = out
     for delta_t in range(T):
         diag = calc_K(tau, delta_t, var_n)
         diag = np.tile(diag, T - delta_t)
@@ -30,19 +33,23 @@ def calc_big_K(T, n_factors, tau, var_n):
         K[idxs_1, idxs_0] = diag
     return K
 
-def make_block_diag(M, num_reps):
+def make_block_diag(M, num_reps, out=None):
     """Create a block diagonal matrix from M repeated num_reps times.
     """
-    big_M = np.zeros((M.shape[0]*num_reps, M.shape[1]*num_reps))
+    if out is None:
+        big_M = np.zeros((M.shape[0]*num_reps, M.shape[1]*num_reps))
+    else:
+        big_M = out
     for i in range(num_reps):
         big_M[i*M.shape[0]:(i+1)*M.shape[0], i*M.shape[1]:(i+1)*M.shape[1]] = M
     return big_M
 
-#only works for 1 sample!
 def log_likelihood(mu, sigma, y):
     """Log likelihood for a multivariate normal distribution.
+
+    Only works for 1 sample data.
     """
-    d = len(y)
+    d = y.size
     log_det_cov = np.linalg.slogdet(sigma)[1]
     y_minus_mean = y - mu
     cov_y = np.dot(y_minus_mean.T, y_minus_mean)
@@ -91,21 +98,26 @@ class GaussianProcessFactorAnalysis(object):
         self.C_ = model.components_.T
         self.d_ =  np.zeros(n)
         self.tau_ = self.tau_init + self.rng.rand(self.n_factors)
+        # Allocated and reuse these
+        big_K = calc_big_K(T, self.n_factors, self.tau_, self.var_n)
+        big_C = make_block_diag(self.C_, T)
+        big_R = make_block_diag(self.R_, T)
 
         for ii in range(self.max_iter):
-            self._em_iter(y)
-        if self.verbose
+            self._em_iter(y, big_K, big_C, big_R)
+        if self.verbose:
             #Compute log likelihood under current params
             big_C = make_block_diag(self.C_, T)
             big_K = calc_big_K(T, self.n_factors, self.tau_, self.var_n)
             big_R = make_block_diag(self.R_, T)
             y_cov = big_C.dot(big_K).dot(big_C.T) + big_R
             big_d = np.tile(self.d_, T)
+            big_y = y.ravel()
             ll = log_likelihood(big_d, y_cov, big_y)
             print("log likelihood:", ll)
         return self
 
-    def _em_iter(self, y):
+    def _em_iter(self, y, big_K, big_C, big_R):
         """One step of EM.
 
         Exact updates for d, C, and R. Optimizatino for tau
@@ -179,6 +191,7 @@ class GaussianProcessFactorAnalysis(object):
                 dEdKi = .5 *(-Ki_inv + Ki_inv.dot(xpx).dot(Ki_inv))
                 dKidti = var_f * (delta_t**2 / np.exp(lti)**3) * np.exp( - delta_t**2 / (2 * np.exp(lti)**2 ))
                 df[ii] = np.trace( np.dot(dEdKi.T, dKidti) ) * np.exp(lti)
+            print(-f)
 
             return -f, -df
 
@@ -186,7 +199,7 @@ class GaussianProcessFactorAnalysis(object):
         opt_tau = np.exp(opt_result.x)
         return opt_tau
 
-    def _E_mean(self, y):
+    def _E_mean(self, y, big_K=None, big_C=None, big_R=None):
         """Infer the mean of the latent variables x given obervations y.
 
         Parameters
@@ -200,9 +213,9 @@ class GaussianProcessFactorAnalysis(object):
         T, n = y.shape
         big_y = y.ravel()
         big_d = np.tile(self.d_, T)
-        big_K = calc_big_K(T, self.n_factors, self.tau_, self.var_n)
-        big_C = make_block_diag(self.C_, T)
-        big_R = make_block_diag(self.R_, T)
+        big_K = calc_big_K(T, self.n_factors, self.tau_, self.var_n, big_K)
+        big_C = make_block_diag(self.C_, T, big_C)
+        big_R = make_block_diag(self.R_, T, big_R)
         big_dy = big_y - big_d
         KCt = big_K.dot(big_C.T)
 
@@ -221,6 +234,7 @@ class GaussianProcessFactorAnalysis(object):
         -------
         x : ndarray (time, n_factors)
         """
+        T, n = y.shape
         x, _, _, _, _, _, _ = self._E_mean(y)
         return x.reshape(T, self.n_factors)
 

@@ -3,7 +3,7 @@ import numpy as np
 from scipy.optimize import minimize
 
 from sklearn.decomposition import FactorAnalysis as FA
-
+import matplotlib.pyplot as plt
 
 __all__ = ['SlowFeatureAnalysis']
 
@@ -15,18 +15,33 @@ def calc_K(tau, delta_t, var_n):
         rval += var_n
     return rval
 
-def calc_big_K(T, n_factors, tau, var_n)
+def calc_big_K(T, n_factors, tau, var_n):
     K = np.zeros((T * n_factors, T * n_factors))
     for delta_t in range(T):
-        diag = calc_K(tau_, delta_t, var_n)
+        diag = calc_K(tau, delta_t, var_n)
         diag = np.tile(diag, T - delta_t)
-        idxs_0 = np.arange(0, T - delta_t)
-        idxs_1 = np.arange(delta_t, T)
+        idxs_0 = np.arange(0, (T - delta_t)*n_factors)
+        idxs_1 = np.arange(delta_t*n_factors, T*n_factors)
         K[idxs_0, idxs_1] = diag
         K[idxs_1, idxs_0] = diag
     return K
 
+def make_block_diag(M, num_reps):
+    big_M = np.zeros((M.shape[0]*num_reps, M.shape[1]*num_reps))
+    for i in range(num_reps):
+        big_M[i*M.shape[0]:(i+1)*M.shape[0], i*M.shape[1]:(i+1)*M.shape[1]] = M
+    return big_M
 
+#only works for 1 sample!
+def log_likelihood(mu, sigma, y):
+    d = len(y)
+    log_det_cov = np.linalg.slogdet(sigma)[1]
+    y_minus_mean = y - mu
+    cov_y = np.dot(y_minus_mean.T, y_minus_mean)
+    log_likelihood = (-0.5*d*np.log(2*np.pi)
+                      - 0.5*log_det_cov
+                      - 0.5*np.trace(np.dot(sigma, cov_y)))
+    return log_likelihood
 
 
 class GaussianProcessFactorAnalysis(object):
@@ -51,16 +66,21 @@ class GaussianProcessFactorAnalysis(object):
         self.d_ =  np.zeros(n)
         self.tau_ = self.tau_init + self.rng.rand(self.n_factors)
 
-    def _expectation(self, y):
+        for ii in range(self.max_iter):
+            self._em_iter(y)
+
+    def _em_iter(self, y):
+        print("EM iter")
         T, n = y.shape
         big_y = y.ravel()
         big_d = np.tile(self.d_, T)
         big_K = calc_big_K(T, self.n_factors, self.tau_, self.var_n)
-        big_C = np.tile(self.C_, (T, T))
-        big_R = np.tile(self.R_, (T, T))
+        big_C = make_block_diag(self.C_, T)
+        big_R = make_block_diag(self.R_, T)
         big_dy = big_y - big_d
         KCt = big_K.dot(big_C.T)
-        KCt_CKCtR_inv = KCt.dot(np.linalg.inv(big_C.dot(KCt) - big_R))
+
+        KCt_CKCtR_inv = KCt.dot(np.linalg.inv(big_C.dot(KCt) + big_R))
         mean = KCt_CKCtR_inv.dot(big_dy)
         cov = big_K - KCt_CKCtR_inv.dot(KCt.T)
         y_cov = big_C.dot(KCt) + big_R
@@ -74,15 +94,25 @@ class GaussianProcessFactorAnalysis(object):
         xxp[-1, -1] = 1.
         xxp[:-1, -1] = x.sum(axis=0)
         xxp[-1, :-1] = x.sum(axis=0)
-        Cd = y.T.dot(np.concatenate(x_reshape, np.ones(T, 1), axis=1).dot(np.linalg.inv(xpp))
+        Cd = y.T.dot(np.concatenate((x, np.ones((T, 1))), axis=1)).dot(np.linalg.inv(xxp))
         self.C_ = Cd[:, :-1]
         self.d_ = Cd[:, -1]
         dy = y - self.d_[np.newaxis]
-        self.R_ = np.diag(np.diag(dy.T.dot(dy) - dy.T.dot(x_reshape).dot(self.C_.T))) / T
-        self.tau_ = optimize_tau(self.tau_)
+        self.R_ = np.diag(np.diag(dy.T.dot(dy) - dy.T.dot(x).dot(self.C_.T))) / T
+        self.tau_ = self.optimize_tau(self.tau_, T, big_xxp)
+
+        #Compute log likelihood under current params
+        big_C = make_block_diag(self.C_, T)
+        big_K = calc_big_K(T, self.n_factors, self.tau_, self.var_n)
+        big_R = make_block_diag(self.R_, T)
+        fa_cov = big_C.dot(big_K).dot(big_C.T) + big_R
+        big_d = np.tile(self.d_, T)
+        ll = log_likelihood(big_d, fa_cov, big_y)
+        print("log likelihood:", ll)
 
     def optimize_tau(self, tau_init, T, Sigma_mu_mu_x):
-        log_tau = np.log(tau_init)
+        log_tau_init = np.log(tau_init)
+        var_f = 1. - self.var_n
         def f_df(log_tau):
             K = calc_big_K(T, self.n_factors, np.exp(log_tau), self.var_n)
             K_inv = np.linalg.inv(K)
@@ -90,15 +120,25 @@ class GaussianProcessFactorAnalysis(object):
                           np.linalg.slogdet(2. * np.pi * K)[1])
 
             df = np.zeros_like(log_tau)
-            for ii, lti in log_tau:
+            t_vals = np.arange(T)[np.newaxis]
+            delta_t = t_vals - t_vals.T
+            for ii, lti in enumerate(log_tau):
                 idxs = ii + (np.arange(T) * self.n_factors)
-                Ki = K[idxs, idxs]
+                Ki = K[idxs, :][:, idxs]
                 Ki_inv = np.linalg.inv(Ki)
-                xpx = Sigma_mu_mu_x[idxs, idxs]
-                dEdK = .5 *(-Ki_inv + Ki_inv.dot(xpx).dot(Ki_inv))
-            return f, df
+                xpx = Sigma_mu_mu_x[idxs, :][:, idxs]
+                dEdKi = .5 *(-Ki_inv + Ki_inv.dot(xpx).dot(Ki_inv))
+                dKidti = var_f * (delta_t**2 / np.exp(lti)**3) * np.exp( - delta_t**2 / (2 * np.exp(lti)**2 ))
+                df[ii] = np.trace( np.dot(dEdKi.T, dKidti) ) * np.exp(lti)
 
+            #print(-f, -df)
+            return -f, -df
 
+        #print('init: ', np.exp(log_tau_init))
+        opt_result = minimize(f_df, x0=log_tau_init, method="L-BFGS-B", jac=True)
+        opt_tau = np.exp(opt_result.x)
+        #print('opt: ', opt_tau)
+        return opt_tau
 
 
 

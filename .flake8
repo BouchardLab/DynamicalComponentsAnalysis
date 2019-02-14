@@ -1,0 +1,4 @@
+[flake8]
+ignore = E401,W503,W504
+max-line-length = 80
+exclude = pyuoi/UoINMF.py,bin/run_uoinmf.py,pyuoi/linear_model/poisson.py

@@ -192,15 +192,15 @@ class ComplexityComponentsAnalysis(object):
     """
     def __init__(self, d=None, T=None, init="random", tol=1e-6, ortho_lambda=10.,
                  verbose=False, device="cuda:0", dtype=torch.float64):
-                 self.d = d
-                 self.T = T
-                 self.init = init
-                 self.tol = tol
-                 self.ortho_lambda = ortho_lambda
-                 self.verbose=verbose
-                 self.device = device
-                 self.dtype = dtype
-                 self.cross_covs = None
+        self.d = d
+        self.T = T
+        self.init = init
+        self.tol = tol
+        self.ortho_lambda = ortho_lambda
+        self.verbose=verbose
+        self.device = device
+        self.dtype = dtype
+        self.cross_covs = None
 
     def estimate_cross_covariance(self, X, T=None, regularization=None,
                                   reg_ops=None):
@@ -226,12 +226,10 @@ class ComplexityComponentsAnalysis(object):
             elif self.init == "random_ortho":
                 V_init = scipy.stats.ortho_group.rvs(N)[:, :d]
             elif self.init == "uniform":
-                V_init = np.ones((N, d))/np.sqrt(N)
+                V_init = np.ones((N, d)) / np.sqrt(N)
                 V_init = V_init + np.random.normal(0, 1e-3, V_init.shape)
             else:
                 raise ValueError
-        elif type(init) == np.ndarray:
-            V_init = init
         else:
             raise ValueError
         V_init /= np.linalg.norm(V_init, axis=0, keepdims=True)
@@ -258,7 +256,7 @@ class ComplexityComponentsAnalysis(object):
 
         optimizer.step(closure)
 
-        #Orhtonormalize the basis prior to returning it
+        # Orthonormalize the basis prior to returning it
         V_opt = scipy.linalg.orth(v.detach().cpu().numpy())
         self.coef_ = V_opt
 
@@ -273,7 +271,8 @@ class ComplexityComponentsAnalysis(object):
     def transform(self, X):
         return X.dot(self.coef_)
 
-    def fit_transform(self, X, d=None, T=None, regularization=None, reg_ops=None):
+    def fit_transform(self, X, d=None, T=None, regularization=None,
+                      reg_ops=None):
         self.fit(X, d=d, T=T, regularization=regularization, reg_ops=reg_ops)
         return self.transform(X)
 

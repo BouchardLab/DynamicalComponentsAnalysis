@@ -207,8 +207,8 @@ class GaussianProcessFactorAnalysis(object):
         KCt = big_K.dot(big_C.T)
 
         KCt_CKCtR_inv = KCt.dot(np.linalg.inv(big_C.dot(KCt) + big_R))
-        big_mu = KCt_CKCtR_inv.dot(big_dy)
-        return mu, big_K, big_C, big_R, big_dy, KCt, KCt_CKCtR_inv
+        mean = KCt_CKCtR_inv.dot(big_dy)
+        return mean, big_K, big_C, big_R, big_dy, KCt, KCt_CKCtR_inv
 
     def transform(self, y):
         """Infer the mean of the latent variables x given obervations y.

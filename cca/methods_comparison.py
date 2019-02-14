@@ -9,6 +9,8 @@ __all__ = ['SlowFeatureAnalysis']
 
 
 def calc_K(tau, delta_t, var_n):
+    """Calculates the GP kernel autocorrelation.
+    """
     var_f = 1. - var_n
     rval = var_f * np.exp(-(delta_t)**2 / (2. * tau**2))
     if delta_t == 0:
@@ -16,6 +18,8 @@ def calc_K(tau, delta_t, var_n):
     return rval
 
 def calc_big_K(T, n_factors, tau, var_n):
+    """Calculates the GP kernel autocorrelation for all latent factors.
+    """
     K = np.zeros((T * n_factors, T * n_factors))
     for delta_t in range(T):
         diag = calc_K(tau, delta_t, var_n)
@@ -27,6 +31,8 @@ def calc_big_K(T, n_factors, tau, var_n):
     return K
 
 def make_block_diag(M, num_reps):
+    """Create a block diagonal matrix from M repeated num_reps times.
+    """
     big_M = np.zeros((M.shape[0]*num_reps, M.shape[1]*num_reps))
     for i in range(num_reps):
         big_M[i*M.shape[0]:(i+1)*M.shape[0], i*M.shape[1]:(i+1)*M.shape[1]] = M
@@ -34,6 +40,8 @@ def make_block_diag(M, num_reps):
 
 #only works for 1 sample!
 def log_likelihood(mu, sigma, y):
+    """Log likelihood for a multivariate normal distribution.
+    """
     d = len(y)
     log_det_cov = np.linalg.slogdet(sigma)[1]
     y_minus_mean = y - mu
@@ -45,19 +53,37 @@ def log_likelihood(mu, sigma, y):
 
 
 class GaussianProcessFactorAnalysis(object):
-    """GPFA
+    """Gaussian Process Factor Analysis model.
+
+    Parameters
+    ----------
+    n_factors : int
+        Number of latent factors.
+    var_n : float
+        Independent noise for the factors.
+    max_iter : int
+        Maximum number of EM steps.
+    tau_init : float
+        Scale for timescale initialization. Units are in sampling rate units.
     """
     def __init__(self, n_factors, var_n=1e-3, max_iter=100,
-                 tau_init=10, seed=20190213):
+                 tau_init=10, seed=20190213, verbose=False):
         self.n_factors = n_factors
         self.var_n = var_n
         self.max_iter = max_iter
         self.tau_init = tau_init
+        self.verbose = verbose
         if tau_init <= 0:
             raise ValueError
         self.rng = np.random.RandomState(seed)
 
     def fit(self, y):
+        """Fit the GPFA model parameters to the obervations y.
+
+        Parameters
+        ----------
+        y : ndarray (time, features)
+        """
         T, n = y.shape
         model = FA(self.n_factors)
         model.fit(y)
@@ -68,22 +94,37 @@ class GaussianProcessFactorAnalysis(object):
 
         for ii in range(self.max_iter):
             self._em_iter(y)
+        if self.verbose
+            #Compute log likelihood under current params
+            big_C = make_block_diag(self.C_, T)
+            big_K = calc_big_K(T, self.n_factors, self.tau_, self.var_n)
+            big_R = make_block_diag(self.R_, T)
+            y_cov = big_C.dot(big_K).dot(big_C.T) + big_R
+            big_d = np.tile(self.d_, T)
+            ll = log_likelihood(big_d, y_cov, big_y)
+            print("log likelihood:", ll)
+        return self
 
     def _em_iter(self, y):
-        print("EM iter")
+        """One step of EM.
+
+        Exact updates for d, C, and R. Optimizatino for tau
+
+        Parameters
+        ----------
+        y : ndarray (time, features)
+        """
         T, n = y.shape
         big_y = y.ravel()
         big_d = np.tile(self.d_, T)
-        big_K = calc_big_K(T, self.n_factors, self.tau_, self.var_n)
-        big_C = make_block_diag(self.C_, T)
-        big_R = make_block_diag(self.R_, T)
-        big_dy = big_y - big_d
-        KCt = big_K.dot(big_C.T)
-
-        KCt_CKCtR_inv = KCt.dot(np.linalg.inv(big_C.dot(KCt) + big_R))
-        mean = KCt_CKCtR_inv.dot(big_dy)
+        mean, big_K, big_C, big_R, big_dy, KCt, KCt_CKCtR_inv = self._E_mean(y)
         cov = big_K - KCt_CKCtR_inv.dot(KCt.T)
         y_cov = big_C.dot(KCt) + big_R
+
+        if self.verbose:
+            #Compute log likelihood under current params
+            ll = log_likelihood(big_d, y_cov, big_y)
+            print("log likelihood:", ll)
         x = mean.reshape(T, -1)
         # TODO: could do this just along the block diagonal
         big_xxp = cov + np.outer(mean, mean)
@@ -99,18 +140,26 @@ class GaussianProcessFactorAnalysis(object):
         self.d_ = Cd[:, -1]
         dy = y - self.d_[np.newaxis]
         self.R_ = np.diag(np.diag(dy.T.dot(dy) - dy.T.dot(x).dot(self.C_.T))) / T
-        self.tau_ = self.optimize_tau(self.tau_, T, big_xxp)
+        self.tau_ = self._optimize_tau(self.tau_, T, big_xxp)
 
-        #Compute log likelihood under current params
-        big_C = make_block_diag(self.C_, T)
-        big_K = calc_big_K(T, self.n_factors, self.tau_, self.var_n)
-        big_R = make_block_diag(self.R_, T)
-        fa_cov = big_C.dot(big_K).dot(big_C.T) + big_R
-        big_d = np.tile(self.d_, T)
-        ll = log_likelihood(big_d, fa_cov, big_y)
-        print("log likelihood:", ll)
 
-    def optimize_tau(self, tau_init, T, Sigma_mu_mu_x):
+    def _optimize_tau(self, tau_init, T, Sigma_mu_mu_x):
+        """Optimization for tau.
+
+        Parameters
+        ----------
+        tau_init : ndarray
+            Inital value for taus.
+        T : int
+            Number of time points.
+        Sigma_mu_mu_x : ndarray (T * n_factors, T * n_factors)
+            Sigma + mu mu^T for x.
+
+        Returns
+        -------
+        opt_tau : ndarray
+            Optimal tau parameters from M step.
+        """
         log_tau_init = np.log(tau_init)
         var_f = 1. - self.var_n
         def f_df(log_tau):
@@ -131,16 +180,49 @@ class GaussianProcessFactorAnalysis(object):
                 dKidti = var_f * (delta_t**2 / np.exp(lti)**3) * np.exp( - delta_t**2 / (2 * np.exp(lti)**2 ))
                 df[ii] = np.trace( np.dot(dEdKi.T, dKidti) ) * np.exp(lti)
 
-            #print(-f, -df)
             return -f, -df
 
-        #print('init: ', np.exp(log_tau_init))
         opt_result = minimize(f_df, x0=log_tau_init, method="L-BFGS-B", jac=True)
         opt_tau = np.exp(opt_result.x)
-        #print('opt: ', opt_tau)
         return opt_tau
 
+    def _E_mean(self, y):
+        """Infer the mean of the latent variables x given obervations y.
 
+        Parameters
+        ----------
+        y : ndarray (time, features)
+
+        Returns
+        -------
+        x : ndarray (time, n_factors)
+        """
+        T, n = y.shape
+        big_y = y.ravel()
+        big_d = np.tile(self.d_, T)
+        big_K = calc_big_K(T, self.n_factors, self.tau_, self.var_n)
+        big_C = make_block_diag(self.C_, T)
+        big_R = make_block_diag(self.R_, T)
+        big_dy = big_y - big_d
+        KCt = big_K.dot(big_C.T)
+
+        KCt_CKCtR_inv = KCt.dot(np.linalg.inv(big_C.dot(KCt) + big_R))
+        big_mu = KCt_CKCtR_inv.dot(big_dy)
+        return mu, big_K, big_C, big_R, big_dy, KCt, KCt_CKCtR_inv
+
+    def transform(self, y):
+        """Infer the mean of the latent variables x given obervations y.
+
+        Parameters
+        ----------
+        y : ndarray (time, features)
+
+        Returns
+        -------
+        x : ndarray (time, n_factors)
+        """
+        x, _, _, _, _, _, _ = self._E_mean(y)
+        return x.reshape(T, self.n_factors)
 
 
 class SlowFeatureAnalysis(object):

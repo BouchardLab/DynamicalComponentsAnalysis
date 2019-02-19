@@ -106,3 +106,4 @@ venv.bak/
 #Our own stuff
 figs/
 __pycache__/
+.DS_Store

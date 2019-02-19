@@ -249,7 +249,8 @@ def build_P(pt):
         P[offset+pt-1, diag_idx-1] = 1/np.sqrt(pt - np.abs(offset))
     return P
 
-def prox_grad_robust_toeplitz_kron_pca(sample_cov, ps, pt, lambda_L, lambda_S, num_iter, tau, return_rank_and_sparsity=False):
+
+def prox_grad_robust_toeplitz_kron_pca(sample_cov, ps, pt, lambda_L, lambda_S, tau=0.1, tol=1e-8, max_iter=1000000, stop_cond_interval=20):
     """Proximal Gradient algorithm for Robust KronPCA
     (Algorithm 1 from Greenewald et al.).
 
@@ -289,13 +290,8 @@ def prox_grad_robust_toeplitz_kron_pca(sample_cov, ps, pt, lambda_L, lambda_S, n
 
     S_tilde = np.zeros(R_tilde.shape) #init so there's no error
 
-    if not isinstance(tau, np.ndarray):
-        tau_vals = np.ones(num_iter)*tau
-    else:
-        tau_vals = tau
+    for k in range(max_iter):
 
-    for k in range(num_iter):
-        tau = tau_vals[k]
         L_tilde = soft_sv_threshold(M_tilde_prev - S_tilde_prev, tau*lambda_L)
         for j in range(-pt+1, pt):
             cj = 1./np.sqrt(pt - np.abs(j))
@@ -304,12 +300,94 @@ def prox_grad_robust_toeplitz_kron_pca(sample_cov, ps, pt, lambda_L, lambda_S, n
 
         M_tilde_prev, S_tilde_prev, L_tilde_prev = M_tilde, S_tilde, L_tilde
 
-    cov_est = pv_rearrange_inv(np.dot(P.T, L_tilde + S_tilde), ps, pt)
+        if k % stop_cond_interval == 0:
+            cov_est = pv_rearrange_inv(np.dot(P.T, L_tilde + S_tilde), ps, pt)
+            if k > 0:
+                rms_diff = np.sqrt(np.mean((cov_est - cov_est_prev)**2))
+                if rms_diff < tol:
+                    break
+            cov_est_prev = cov_est
 
-    if return_rank_and_sparsity:
-    	rank = np.linalg.matrix_rank(L_tilde)
-    	sparsity = np.sum(np.nonzero(S_tilde))/S_tilde.size
-    	return cov_est, rank, sparsity
+    rank = np.linalg.matrix_rank(np.dot(P.T, L_tilde))
+    sparsity = np.sum(np.nonzero(S_tilde))/S_tilde.size
 
-    else:
-    	return cov_est
+    return cov_est, rank, sparsity
+
+
+def cross_validate_toeplitz_fit(X_with_lags, ps, pt, lambda_L, lambda_S, num_folds=10, tau=0.1, tol=1e-8, max_iter=1000000, stop_cond_interval=20):
+    
+    fold_size = int(np.floor(len(X_with_lags)/num_folds))
+    log_likelihood_vals = np.zeros(num_folds)
+    rank_vals = np.zeros(num_folds)
+    sparsity_vals = np.zeros(num_folds)
+    d = X_with_lags.shape[1]
+    
+    for cv_iter in range(num_folds):
+        
+        X_train = np.concatenate((X_with_lags[:cv_iter*fold_size], X_with_lags[(cv_iter+1)*fold_size:]), axis=0)
+        X_test = X_with_lags[cv_iter*fold_size : (cv_iter+1)*fold_size]
+        
+        X_train_ctd = X_train - X_train.mean(axis=0)
+        cov_train = np.dot(X_train_ctd.T, X_train_ctd)/len(X_train)
+        cov_test = np.dot(X_test.T, X_test)/len(X_test)
+
+        cov_reg_train, rank, sparsity = prox_grad_robust_toeplitz_kron_pca(cov_train, ps, pt, lambda_L, lambda_S,
+                                                                           tau=tau, tol=tol, max_iter=max_iter,
+                                                                           stop_cond_interval=stop_cond_interval)
+
+        if np.sum(np.abs(cov_reg_train)) < 1e-12:
+            log_likelihood_vals[cv_iter] = -np.inf
+            rank_vals[cv_iter] = 0
+            sparsity_vals[cv_iter] = 0
+            continue
+
+        cov_reg_train_inv = np.linalg.inv(cov_reg_train)
+        _, log_det_cov_reg_train = np.linalg.slogdet(cov_reg_train)
+        
+        num_samples = len(X_test)
+        log_likelihood = -0.5*num_samples*(d*np.log(2*np.pi) + log_det_cov_reg_train + np.trace(np.dot(cov_reg_train_inv, cov_test)))
+
+        log_likelihood_vals[cv_iter] = log_likelihood
+        rank_vals[cv_iter] = rank
+        sparsity_vals[cv_iter] = sparsity
+        
+    return log_likelihood_vals, rank_vals, sparsity_vals
+
+
+
+def regularize_cov(X_with_lags, ps, pt, lambda_S_vals, lambda_L_vals, num_folds=10, tau=0.1, tol=1e-8, max_iter=1000000, stop_cond_interval=20):
+    
+    log_likelihood_vals = np.zeros(( len(lambda_L_vals), len(lambda_S_vals), num_folds ))
+    rank_vals = np.zeros(log_likelihood_vals.shape)
+    sparsity_vals = np.zeros(log_likelihood_vals.shape)
+
+    err = np.inf
+
+    for lambda_L_idx in range(len(lambda_L_vals)):
+        for lambda_S_idx in range(len(lambda_S_vals)):
+
+            lambda_L, lambda_S = lambda_L_vals[lambda_L_idx], lambda_S_vals[lambda_S_idx]
+            print(lambda_L, lambda_S)
+        
+            log_likelihood_vals_cv, rank_vals_cv, sparsity_vals_cv = cross_validate_toeplitz_fit(X_with_lags, ps, pt, lambda_L, lambda_S,
+                                                                                                 num_folds=num_folds, tau=tau, tol=tol, max_iter=max_iter,
+                                                                                                 stop_cond_interval=stop_cond_interval)
+            
+            log_likelihood_vals[lambda_L_idx, lambda_S_idx] = log_likelihood_vals_cv
+            rank_vals[lambda_L_idx, lambda_S_idx] = rank_vals_cv
+            sparsity_vals[lambda_L_idx, lambda_S_idx] = sparsity_vals_cv
+    
+    mean_ll_vals = np.mean( log_likelihood_vals, axis=2 )
+    max_idx = np.unravel_index(mean_ll_vals.argmax(), mean_ll_vals.shape)
+    lambda_L_opt, lambda_S_opt = lambda_L_vals[max_idx[0]], lambda_S_vals[max_idx[1]]
+
+    sample_cov = np.cov(X_with_lags.T, bias=True)
+    final_cov_reg, _, _ = prox_grad_robust_toeplitz_kron_pca(sample_cov, ps, pt, lambda_L, lambda_S, tau=tau, tol=tol, max_iter=max_iter, stop_cond_interval=stop_cond_interval)
+    
+    return final_cov_reg, log_likelihood_vals, rank_vals, sparsity_vals
+
+
+
+
+
+

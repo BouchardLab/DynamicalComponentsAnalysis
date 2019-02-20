@@ -4,9 +4,8 @@ Implementation of 'Robust (Toeplitz) KronPCA from
 by Kristjan Greenewald and Alfred O. Hero.
 Link: https://arxiv.org/abs/1411.1352
 
-I faithfully implemented Algorithms 1 and 2 as described in on p. 14 of the
-manuscript. I'm not sure what Eq. 16 is trying to acomplish (it seems...wrong).
-My implemntation should do this step correctly (see 'build_p(pt)').
+I'm not sure what Eq. 16 is trying to acomplish (it seems...wrong).
+My implemntation should do this step correctly (see 'build_P(pt)').
 """
 
 import numpy as np
@@ -167,59 +166,6 @@ def soft_entrywise_threshold(M, lambda_param):
     soft_thresholded_M = np.sign(M)*np.maximum(np.abs(M) - lambda_param, 0)
     return soft_thresholded_M
 
-def prox_grad_robust_kron_pca(sample_cov, ps, pt, lambda_L, lambda_S, num_iter, tau):
-    """Proximal Gradient algorithm for Robust KronPCA
-    (Algorithm 1 from Greenewald et al.).
-
-    Parameters
-    ----------
-    sample_cov : np.ndarray, shape (ps*pt, ps*pt)
-        Sample covariance matrix which will be robustly
-        estimated by the algorithm.
-    ps : int
-        Number of spatial dimensions.
-    pt : int
-        Number of temporal dimensions.
-    lambda_L : float
-        Regularization parameter corresponding the nuclear norm
-        of the PV-rearranged Kronecker decomposition L.
-    lambda_S : float
-         Regularization parameter corresponding the l1-norm
-        of the PV-rearranged additiive sparse component S.
-    num_iter : int
-        Number of iterations of gradient descent.
-    tau : int OR np.ndarray, shape (num_iter,)
-        int case: Step size for th algorithm.
-        np.ndarray case: Schedule of step-size values for the algorithm.
-
-    Returns
-    ----------
-    cov_est : np.ndarray, shape (ps*pt, ps*pt)
-        Robust KronPCA estiamte of the sample covariance matrix.
-    """
-    R = pv_rearrange(sample_cov, ps, pt)
-
-    L_prev = np.copy(R)
-    S_prev = np.zeros(R.shape)
-    M_prev = L_prev + S_prev
-
-    if not isinstance(tau, np.ndarray):
-        tau_vals = np.ones(num_iter)*tau
-    else:
-        tau_vals = tau
-
-    for k in range(num_iter):
-        tau = tau_vals[k]
-
-        L = soft_sv_threshold(M_prev - S_prev, tau*lambda_L)
-        S = soft_entrywise_threshold(M_prev - L_prev, tau*lambda_S)
-        M = L + S - tau*(L + S - R)
-
-        M_prev, S_prev, L_prev = M, S, L
-
-    cov_est = pv_rearrange_inv(L + S, ps, pt)
-    return cov_est
-
 def build_P(pt):
     """Builds a matrix P which maps a pt^2-by-ps^2 PV-rearranged
     version of a matrix M to a (2*pt - 1)-by-ps^2 version of M
@@ -249,10 +195,9 @@ def build_P(pt):
         P[offset+pt-1, diag_idx-1] = 1/np.sqrt(pt - np.abs(offset))
     return P
 
-
 def prox_grad_robust_toeplitz_kron_pca(sample_cov, ps, pt, lambda_L, lambda_S, tau=0.1, tol=1e-8, max_iter=1000000, stop_cond_interval=20):
-    """Proximal Gradient algorithm for Robust KronPCA
-    (Algorithm 1 from Greenewald et al.).
+    """Proximal Gradient algorithm for Robust KronPCA with block Toeplitz constraint.
+    (Algorithm 2 from Greenewald et al.).
 
     Parameters
     ----------
@@ -267,18 +212,26 @@ def prox_grad_robust_toeplitz_kron_pca(sample_cov, ps, pt, lambda_L, lambda_S, t
         Regularization parameter corresponding the nuclear norm
         of the PV-rearranged Kronecker decomposition L.
     lambda_S : float
-         Regularization parameter corresponding the l1-norm
+        Regularization parameter corresponding the l1-norm
         of the PV-rearranged additiive sparse component S.
-    num_iter : int
-        Number of iterations of gradient descent.
-    tau : int OR np.ndarray, shape (num_iter,)
-        int case: Step size for th algorithm.
-        np.ndarray case: Schedule of step-size values for the algorithm.
+    tau : float
+        Step size.
+    tol : float
+        RMS element-wise difference between the current matrix and the matrix
+        from 'stop_cond_interval' iterations ago such that optimization terminates.
+    max_iter : int
+        Maximum number of iterations of gradient descent.
+    stop_cond_interval : int
+        Interval at which the termination condition is checked.
 
     Returns
     ----------
     cov_est : np.ndarray, shape (ps*pt, ps*pt)
         Robust KronPCA estiamte of the sample covariance matrix.
+    rank : int
+        Rank of L.
+    sparsity : float
+        Fraction of nonzero elements in S.
     """
     P = build_P(pt)
     R = pv_rearrange(sample_cov, ps, pt)
@@ -315,7 +268,34 @@ def prox_grad_robust_toeplitz_kron_pca(sample_cov, ps, pt, lambda_L, lambda_S, t
 
 
 def cross_validate_toeplitz_fit(X_with_lags, ps, pt, lambda_L, lambda_S, num_folds=10, tau=0.1, tol=1e-8, max_iter=1000000, stop_cond_interval=20):
-    
+    """Computes the cross-validated log likelihood of KronPCA given values of the hyperparameters.
+
+    Parameters
+    ----------
+    X_with_lags : np.ndarray, shape (# samples, ps*pt)
+        Input data. The covariance matrix of X_with_lags.T*X_with_lags will be computed.
+    ps : int
+        Number of spatial dimensions.
+    pt : int
+        Number of temporal dimensions.
+    lambda_L : float
+        Regularization hyperparameter 1.
+    lambda_S : float
+        Regularization hyperparameter 2.
+    num_folds : int
+        Number of partitions of the data for cross validation.
+    tau, tol, max_iter, stop_cond_interval
+        See 'prox_grad_robust_toeplitz_kron_pca'. 
+
+    Returns
+    ----------
+    log_likelihood_vals : np.ndarray, shape (num_folds,)
+        Log likelihood values for each CV fold.
+    rank_vals : np.ndarray, shape (num_folds,)
+        Rank values for each CV fold.
+    sparsity_vals : np.ndarray, shape (num_folds,)
+        Sparsity values for each CV fold.
+    """
     fold_size = int(np.floor(len(X_with_lags)/num_folds))
     log_likelihood_vals = np.zeros(num_folds)
     rank_vals = np.zeros(num_folds)
@@ -335,14 +315,15 @@ def cross_validate_toeplitz_fit(X_with_lags, ps, pt, lambda_L, lambda_S, num_fol
                                                                            tau=tau, tol=tol, max_iter=max_iter,
                                                                            stop_cond_interval=stop_cond_interval)
 
-        if np.sum(np.abs(cov_reg_train)) < 1e-12:
+        if np.mean(np.abs(cov_reg_train)) < 1e-12:
+            print("Error: Regularized matrix is zero.")
             log_likelihood_vals[cv_iter] = -np.inf
             rank_vals[cv_iter] = 0
             sparsity_vals[cv_iter] = 0
             continue
 
         cov_reg_train_inv = np.linalg.inv(cov_reg_train)
-        _, log_det_cov_reg_train = np.linalg.slogdet(cov_reg_train)
+        log_det_cov_reg_train = np.linalg.slogdet(cov_reg_train)[1]
         
         num_samples = len(X_test)
         log_likelihood = -0.5*num_samples*(d*np.log(2*np.pi) + log_det_cov_reg_train + np.trace(np.dot(cov_reg_train_inv, cov_test)))
@@ -354,14 +335,40 @@ def cross_validate_toeplitz_fit(X_with_lags, ps, pt, lambda_L, lambda_S, num_fol
     return log_likelihood_vals, rank_vals, sparsity_vals
 
 
+def regularize_cov(X_with_lags, ps, pt, lambda_L_vals, lambda_S_vals, num_folds=10, tau=0.1, tol=1e-8, max_iter=1000000, stop_cond_interval=20):
+    """Regularizes the covariance matrix of X_with_lags using KronPCA with cross validation.
 
-def regularize_cov(X_with_lags, ps, pt, lambda_S_vals, lambda_L_vals, num_folds=10, tau=0.1, tol=1e-8, max_iter=1000000, stop_cond_interval=20):
-    
+    Parameters
+    ----------
+    X_with_lags : np.ndarray, shape (# samples, ps*pt)
+        Input data. The covariance matrix of X_with_lags.T*X_with_lags will be computed.
+    ps : int
+        Number of spatial dimensions.
+    pt : int
+        Number of temporal dimensions.
+    lambda_L_vals : np.ndarray, shape (num_folds,)
+        Values of the regularization hyperparameter lambda_L over which to search.
+    lambda_S : np.ndarray, shape (num_folds,)
+        Values of the regularization hyperparameter lambda_S over which to search.
+    num_folds : int
+        Number of partitions of the data for cross validation.
+    tau, tol, max_iter, stop_cond_interval
+        See 'prox_grad_robust_toeplitz_kron_pca'. 
+
+    Returns
+    ----------
+    cov_reg : np.ndarray, shape (ps*pt, ps*pt)
+        Regularized covariance matrix.
+    log_likelihood_vals : np.ndarray, shape (# lambda_L vals, # lambda_S vals, num_folds)
+        Log likelihood values from cross validation.
+    rank_vals : np.ndarray, shape (# lambda_L vals, # lambda_S vals, num_folds)
+        Rank values from cross validation.
+    sparsity_vals : np.ndarray, shape (# lambda_L vals, # lambda_S vals, num_folds)
+        Sparsity values from cross validation.
+    """
     log_likelihood_vals = np.zeros(( len(lambda_L_vals), len(lambda_S_vals), num_folds ))
     rank_vals = np.zeros(log_likelihood_vals.shape)
     sparsity_vals = np.zeros(log_likelihood_vals.shape)
-
-    err = np.inf
 
     for lambda_L_idx in range(len(lambda_L_vals)):
         for lambda_S_idx in range(len(lambda_S_vals)):
@@ -377,14 +384,14 @@ def regularize_cov(X_with_lags, ps, pt, lambda_S_vals, lambda_L_vals, num_folds=
             rank_vals[lambda_L_idx, lambda_S_idx] = rank_vals_cv
             sparsity_vals[lambda_L_idx, lambda_S_idx] = sparsity_vals_cv
     
-    mean_ll_vals = np.mean( log_likelihood_vals, axis=2 )
-    max_idx = np.unravel_index(mean_ll_vals.argmax(), mean_ll_vals.shape)
+    ll_mean = log_likelihood_vals.mean(axis=2)
+    max_idx = np.unravel_index(ll_mean.argmax(), ll_mean.shape)
     lambda_L_opt, lambda_S_opt = lambda_L_vals[max_idx[0]], lambda_S_vals[max_idx[1]]
 
     sample_cov = np.cov(X_with_lags.T, bias=True)
-    final_cov_reg, _, _ = prox_grad_robust_toeplitz_kron_pca(sample_cov, ps, pt, lambda_L, lambda_S, tau=tau, tol=tol, max_iter=max_iter, stop_cond_interval=stop_cond_interval)
+    cov_reg, _, _ = prox_grad_robust_toeplitz_kron_pca(sample_cov, ps, pt, lambda_L_opt, lambda_S_opt, tau=tau, tol=tol, max_iter=max_iter, stop_cond_interval=stop_cond_interval)
     
-    return final_cov_reg, log_likelihood_vals, rank_vals, sparsity_vals
+    return cov_reg, log_likelihood_vals, rank_vals, sparsity_vals
 
 
 

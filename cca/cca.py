@@ -4,6 +4,8 @@ import torch
 
 from cca.cov_util import calc_cross_cov_mats_from_data, calc_pi_from_cross_cov_mats
 
+__all__ = ["ComplexityComponentsAnalysis"]
+
 def ortho_reg_fn(V, ortho_lambda):
     """Regularization term which encourages the basis vectors in the
     columns of V to be orthonormal.

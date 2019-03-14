@@ -1,7 +1,8 @@
 import numpy as np
 import scipy
-import cca
+import h5py
 
+from cca.cov_util import calc_cov_from_cross_cov_mats, calc_cross_cov_mats_from_cov, calc_pi_from_cov
 
 def gen_gp_cov(T, N, kernel):
     """Generates a N*T-by-N*T covariance matrix for a spatiotemporal Gaussian
@@ -150,17 +151,17 @@ def embed_gp(T, N, d, kernel, noise_cov, T_pi, num_to_concat=1):
 
     #Compute the PI of the high-dimensional, noisy process
     cov_low_d = gen_gp_cov(T=2*T_pi, N=d, kernel=kernel)
-    low_d_cross_cov_mats = cca.calc_cross_cov_mats_from_cov(N=d, num_lags=2*T_pi, cov=cov_low_d)
+    low_d_cross_cov_mats = calc_cross_cov_mats_from_cov(N=d, num_lags=2*T_pi, cov=cov_low_d)
     high_d_cross_cov_mats = np.array([np.dot(U, np.dot(C, U.T)) for C in low_d_cross_cov_mats])
     high_d_cross_cov_mats[0] += noise_cov
-    cov_high_d = cca.calc_cov_from_cross_cov_mats(high_d_cross_cov_mats)
-    full_pi = cca.calc_pi_from_cov(cov_high_d)
+    cov_high_d = calc_cov_from_cross_cov_mats(high_d_cross_cov_mats)
+    full_pi = calc_pi_from_cov(cov_high_d)
 
     embedding_cross_cov_mats = np.array([np.dot(U.T, np.dot(C, U)) for C in high_d_cross_cov_mats])
-    cov_embedding = cca.calc_cov_from_cross_cov_mats(embedding_cross_cov_mats)
-    embedding_pi = cca.calc_pi_from_cov(cov_embedding)
+    cov_embedding = calc_cov_from_cross_cov_mats(embedding_cross_cov_mats)
+    embedding_pi = calc_pi_from_cov(cov_embedding)
 
-    return X, U , full_pi, embedding_pi
+    return X, U , full_pi, embedding_pi, high_d_cross_cov_mats
 
 
 def gen_lorenz_system(T, integration_dt, data_dt):
@@ -209,30 +210,26 @@ def embed_lorenz_system(T, integration_dt, data_dt, N, noise_cov):
 
     return X
 
-def gen_chaotic_rnn(N, T, integration_dt, data_dt, x_0=None, noise_cov=None):
-
-    #Time constants from LFADS paper chaotic RNN
-    tau = 0.025
-    gamma = 1.5 #2.5
+def gen_chaotic_rnn(file, N, T, dt, tau, gamma, x_0=None, noise_cov=None):
 
     #Weight variance ~1/N
     W = np.random.normal(0, 1/np.sqrt(N), (N, N))
 
-    def dx_dt(y, t):
-        y_dot = (1/tau)*(-y + gamma*np.dot(W, np.tanh(y)))
-        return y_dot
+    def dx_dt(x, t):
+        x_dot = (1/tau)*(-x + gamma*np.dot(W, np.tanh(x)))
+        return x_dot
 
     if not isinstance(x_0, np.ndarray):
         x_0 = np.random.normal(0, 1, N)
 
-    t = np.arange(0, T, integration_dt)
-    X = scipy.integrate.odeint(dx_dt, x_0, t)
+    num_timesteps = int(np.round(T / dt))
+    dataset_shape = (num_timesteps, N)
+    X = file.create_dataset("data", dataset_shape, dtype=np.float64)
+    X[0, :] = x_0
 
-    skip = int(np.round(data_dt / integration_dt))
-    X_downsampled = X[::skip, :]
-    X = X_downsampled
-
-    if isinstance(noise_cov, np.ndarray):
-        X += np.random.multivariate_normal(mean=np.zeros(N), cov=noise_cov, size=len(X))
+    for i in range(1, num_timesteps):
+        if i % 100 == 0:
+            print(i)
+        X[i, :] = X[i-1, :] + dt*dx_dt(X[i-1, :], i*dt)
 
     return X

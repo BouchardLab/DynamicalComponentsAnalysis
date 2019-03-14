@@ -1,12 +1,10 @@
 import numpy as np
 
 from scipy.optimize import minimize
-
 from sklearn.decomposition import FactorAnalysis as FA
 
 __all__ = ['GaussianProcessFactorAnalysis',
            'SlowFeatureAnalysis']
-
 
 def calc_K(tau, delta_t, var_n):
     """Calculates the GP kernel autocorrelation.

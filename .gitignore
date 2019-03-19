@@ -107,4 +107,4 @@ venv.bak/
 figs/
 __pycache__/
 .DS_Store
-.hdf5
+*.hdf5

@@ -31,7 +31,7 @@ def ortho_reg_fn(V, ortho_lambda):
 
     return reg_val
 
-def build_loss(cross_cov_mats, d, lambda_param=10):
+def build_loss(cross_cov_mats, d, lambda_param=1):
     """Constructs a loss function which gives the (negative) predictive
     information in the projection of multidimensional timeseries data X onto a
     d-dimensional basis, where predictive information is computed using a
@@ -102,7 +102,7 @@ class ComplexityComponentsAnalysis(object):
 
         return self
 
-    def fit_projection(self, d):
+    def fit_projection(self, d, max_eval=15000, max_iter=15000, tolerance_grad=1e-5, tolerance_change=1e-9):
         if d is None:
             d = self.d
         if self.cross_covs is None:
@@ -127,7 +127,8 @@ class ComplexityComponentsAnalysis(object):
                          device=self.device, dtype=self.dtype)
         c = torch.tensor(self.cross_covs, device=self.device, dtype=self.dtype)
 
-        optimizer = torch.optim.LBFGS([v], max_eval=15000, max_iter=15000)
+        optimizer = torch.optim.LBFGS([v], max_eval=max_eval, max_iter=max_iter,
+        							  tolerance_grad=tolerance_grad, tolerance_change=tolerance_change)
         def closure():
             optimizer.zero_grad()
             loss = build_loss(c, d)(v)

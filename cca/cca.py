@@ -104,7 +104,7 @@ class ComplexityComponentsAnalysis(object):
 
         return self
 
-    def fit_projection(self, d, max_eval=15000, max_iter=15000, tolerance_grad=1e-5, tolerance_change=1e-9):
+    def fit_projection(self, d):
         if d is None:
             d = self.d
         if self.cross_covs is None:
@@ -142,10 +142,10 @@ class ComplexityComponentsAnalysis(object):
                 grad = v_flat_torch.grad
                 return loss.detach().cpu().numpy(), grad.detach().cpu().numpy()
             opt = minimize(f_df, V_init.ravel(), method='L-BFGS-B', jac=True,
-                           options={'disp': self.verbose})
+                           options={'disp': self.verbose, 'ftol': 1e-10, 'gtol': 1e-10, 'maxfun': 10**10, 'maxiter': 10**10, 'maxls': 20})
             v = opt.x.reshape(N, d)
         else:
-            optimizer = torch.optim.LBFGS([v], max_eval=15000, max_iter=15000)
+            optimizer = torch.optim.LBFGS([v], max_eval=10**10, max_iter=10**10, tolerance_grad=1e-10, tolerance_change=1e-10)
             def closure():
                 optimizer.zero_grad()
                 loss = build_loss(c, d)(v)

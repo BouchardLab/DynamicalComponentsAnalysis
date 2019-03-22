@@ -104,7 +104,7 @@ class ComplexityComponentsAnalysis(object):
 
         return self
 
-    def fit_projection(self, d):
+    def fit_projection(self, d=None):
         if d is None:
             d = self.d
         if self.cross_covs is None:

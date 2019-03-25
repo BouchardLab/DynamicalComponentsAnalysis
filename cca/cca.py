@@ -130,6 +130,23 @@ class ComplexityComponentsAnalysis(object):
         c = torch.tensor(self.cross_covs, device=self.device, dtype=self.dtype)
 
         if self.use_scipy:
+            if self.verbose:
+                def callback(v_flat):
+                    v_flat_torch = torch.tensor(v_flat,
+                                                requires_grad=True,
+                                                device=self.device,
+                                                dtype=self.dtype)
+                    v_torch = v_flat_torch.reshape(N, d)
+                    #optimizer.zero_grad()
+                    loss = build_loss(c, d)(v_torch)
+                    reg_val = ortho_reg_fn(v, self.ortho_lambda)
+                    loss_no_reg = loss - reg_val
+                    loss = loss.detach().cpu().numpy()
+                    reg_val = reg_val.detach().cpu().numpy()
+                    print("PI: {} bits, reg: {}".format(str(np.round(-loss, 4)),
+                                                        str(np.round(reg_val, 4))))
+            else:
+                callback = None
             def f_df(v_flat):
                 v_flat_torch = torch.tensor(v_flat,
                                             requires_grad=True,
@@ -142,7 +159,8 @@ class ComplexityComponentsAnalysis(object):
                 grad = v_flat_torch.grad
                 return loss.detach().cpu().numpy(), grad.detach().cpu().numpy()
             opt = minimize(f_df, V_init.ravel(), method='L-BFGS-B', jac=True,
-                           options={'disp': self.verbose, 'ftol': 1e-10, 'gtol': 1e-10, 'maxfun': 10**10, 'maxiter': 10**10, 'maxls': 20})
+                           options={'disp': self.verbose, 'ftol': 1e-10, 'gtol': 1e-10, 'maxfun': 10**10, 'maxiter': 10**10, 'maxls': 20},
+                           callback=callback)
             v = opt.x.reshape(N, d)
         else:
             optimizer = torch.optim.LBFGS([v], max_eval=10**10, max_iter=10**10, tolerance_grad=1e-10, tolerance_change=1e-10)

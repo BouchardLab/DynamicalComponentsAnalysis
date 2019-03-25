@@ -139,12 +139,13 @@ class ComplexityComponentsAnalysis(object):
                     v_torch = v_flat_torch.reshape(N, d)
                     #optimizer.zero_grad()
                     loss = build_loss(c, d)(v_torch)
-                    reg_val = ortho_reg_fn(v, self.ortho_lambda)
+                    reg_val = ortho_reg_fn(v_torch, self.ortho_lambda)
                     loss_no_reg = loss - reg_val
                     loss = loss.detach().cpu().numpy()
                     reg_val = reg_val.detach().cpu().numpy()
                     print("PI: {} bits, reg: {}".format(str(np.round(-loss, 4)),
                                                         str(np.round(reg_val, 4))))
+                callback(V_init)
             else:
                 callback = None
             def f_df(v_flat):

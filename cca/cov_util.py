@@ -125,9 +125,9 @@ def calc_cov_from_cross_cov_mats(cross_cov_mats):
         Big covariance matrix, stationary in time by construction.
     """
 
-    N = cross_cov_mats[0].shape[0]
+    N = cross_cov_mats.shape[1]
     num_lags = len(cross_cov_mats)
-    use_torch = isinstance(cross_cov_mats[0], torch.Tensor)
+    use_torch = isinstance(cross_cov_mats, torch.Tensor)
 
     cross_cov_mats_repeated = []
     for i in range(num_lags):
@@ -196,21 +196,29 @@ def project_cross_cov_mats(cross_cov_mats, proj):
     cross_cov_mats_proj : ndarray, shape (num_lags, d, d)
         Mutual information in bits.
     """
-    use_torch = isinstance(cross_cov_mats[0], torch.Tensor)
+    if isinstance(cross_cov_mats, torch.Tensor):
+        use_torch = True
+    elif isinstance(cross_cov_mats[0], torch.Tensor):
+        cross_cov_mats = torch.stack(cross_cov_mats)
+        use_torch = True
+    else:
+        use_torch = False
 
     if use_torch and isinstance(proj, np.ndarray):
-        proj = torch.tensor(proj, device=cross_cov_mats[0].device, dtype=cross_cov_mats[0].dtype)
+        proj = torch.tensor(proj, device=cross_cov_mats.device, dtype=cross_cov_mats.dtype)
 
     T = cross_cov_mats.shape[0] // 2
-    cross_cov_mats_proj = []
-    for i in range(2*T):
-        cross_cov = cross_cov_mats[i]
-        if use_torch:
-            cross_cov_proj = torch.mm(proj.t(), torch.mm(cross_cov, proj))
-        else:
+    if use_torch:
+        cross_cov_mats_proj = torch.matmul(proj.t().unsqueeze(0),
+                                           torch.matmul(cross_cov_mats,
+                                                        proj.unsqueeze(0)))
+    else:
+        cross_cov_mats_proj = []
+        for i in range(2*T):
+            cross_cov = cross_cov_mats[i]
             cross_cov_proj = np.dot(proj.T, np.dot(cross_cov, proj))
-
-        cross_cov_mats_proj.append(cross_cov_proj)
+            cross_cov_mats_proj.append(cross_cov_proj)
+        cross_cov_mats_proj = np.stack(cross_cov_mats_proj)
 
     return cross_cov_mats_proj
 
@@ -234,7 +242,7 @@ def calc_pi_from_cross_cov_mats(cross_cov_mats, proj=None):
         Mutual information in bits.
     """
     if proj is not None:
-        cross_cov_mats_proj = project_cross_cov_mats(cross_cov_mats, proj):
+        cross_cov_mats_proj = project_cross_cov_mats(cross_cov_mats, proj)
     else:
         cross_cov_mats_proj = cross_cov_mats
 

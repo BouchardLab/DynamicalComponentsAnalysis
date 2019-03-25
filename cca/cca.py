@@ -100,7 +100,8 @@ class ComplexityComponentsAnalysis(object):
         else:
             self.T = T
 
-        self.cross_covs = calc_cross_cov_mats_from_data(X, 2*self.T, regularization=regularization, reg_ops=reg_ops)
+        cross_covs = calc_cross_cov_mats_from_data(X, 2*self.T, regularization=regularization, reg_ops=reg_ops)
+        self.cross_covs = torch.tensor(cross_covs, device=self.device, dtype=self.dtype)
 
         return self
 
@@ -127,7 +128,7 @@ class ComplexityComponentsAnalysis(object):
 
         v = torch.tensor(V_init, requires_grad=True,
                          device=self.device, dtype=self.dtype)
-        c = torch.tensor(self.cross_covs, device=self.device, dtype=self.dtype)
+        c = self.cross_covs
 
         if self.use_scipy:
             if self.verbose:
@@ -158,7 +159,7 @@ class ComplexityComponentsAnalysis(object):
                 loss = build_loss(c, d)(v_torch)
                 loss.backward()
                 grad = v_flat_torch.grad
-                return loss.detach().cpu().numpy(), grad.detach().cpu().numpy()
+                return loss.detach().cpu().numpy().astype(float), grad.detach().cpu().numpy().astype(float)
             opt = minimize(f_df, V_init.ravel(), method='L-BFGS-B', jac=True,
                            options={'disp': self.verbose, 'ftol': 1e-10, 'gtol': 1e-10, 'maxfun': 10**10, 'maxiter': 10**10, 'maxls': 20},
                            callback=callback)

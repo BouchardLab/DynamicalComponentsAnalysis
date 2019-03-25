@@ -169,7 +169,6 @@ def calc_pi_from_cov(cov_2T):
 
     cov_T = cov_2T[:half, :half]
     if use_torch:
-        torch_logdet = lambda cov: torch.sum(torch.log(torch.svd(cov)[1]))
         logdet_T = torch.slogdet(cov_T)[1]
         logdet_2T = torch.slogdet(cov_2T)[1]
     else:
@@ -234,22 +233,8 @@ def calc_pi_from_cross_cov_mats(cross_cov_mats, proj=None):
     PI : float
         Mutual information in bits.
     """
-    use_torch = isinstance(cross_cov_mats[0], torch.Tensor)
-
-    if use_torch and isinstance(proj, np.ndarray):
-        proj = torch.tensor(proj, device=cross_cov_mats[0].device, dtype=cross_cov_mats[0].dtype)
-
-    T = cross_cov_mats.shape[0] // 2
-    cross_cov_mats_proj = []
     if proj is not None:
-        for i in range(2*T):
-            cross_cov = cross_cov_mats[i]
-            if use_torch:
-                cross_cov_proj = torch.mm(proj.t(), torch.mm(cross_cov, proj))
-            else:
-                cross_cov_proj = np.dot(proj.T, np.dot(cross_cov, proj))
-
-            cross_cov_mats_proj.append(cross_cov_proj)
+        cross_cov_mats_proj = project_cross_cov_mats(cross_cov_mats, proj):
     else:
         cross_cov_mats_proj = cross_cov_mats
 

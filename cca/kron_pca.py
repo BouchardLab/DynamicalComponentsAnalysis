@@ -110,7 +110,7 @@ def cv_toeplitz(X_with_lags, N, T, num_folds=10, max_r=10, small_eigval=1e-6):
         X_train = np.concatenate((X_with_lags[:cv_iter*fold_size], X_with_lags[(cv_iter+1)*fold_size:]), axis=0)
         X_test = X_with_lags[cv_iter*fold_size : (cv_iter+1)*fold_size]
         num_samples = len(X_test)
-        
+
         X_train_ctd = X_train - X_train.mean(axis=0)
         X_test_ctd = X_test - X_test.mean(axis=0)
         cov_train = np.dot(X_train_ctd.T, X_train_ctd)/len(X_train)
@@ -153,8 +153,3 @@ def cv_toeplitz(X_with_lags, N, T, num_folds=10, max_r=10, small_eigval=1e-6):
         cov_reg = cov_reg + (-min_eig + small_eigval)*np.eye(N*T)
 
     return log_likelihood_vals, cov_reg
-
-
-
-
-

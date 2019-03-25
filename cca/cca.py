@@ -95,6 +95,7 @@ class ComplexityComponentsAnalysis(object):
         self.use_scipy = use_scipy
 
     def estimate_cross_covariance(self, X, T=None, regularization=None, reg_ops=None):
+        self.mean_ = X.mean(axis=0, keepdims=True)
         if T is None:
             T = self.T
         else:
@@ -195,7 +196,7 @@ class ComplexityComponentsAnalysis(object):
         return self
 
     def transform(self, X):
-        return X.dot(self.coef_)
+        return (X - self.mean_).dot(self.coef_)
 
     def fit_transform(self, X, d=None, T=None, regularization=None,
                       reg_ops=None):

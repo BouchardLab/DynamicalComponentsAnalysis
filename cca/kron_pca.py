@@ -172,7 +172,7 @@ def cv_toeplitz(X_with_lags, N, T, r_vals, sigma_vals, num_folds=10):
         R_C = pv_rearrange(cov_train, N, T)
         to_svd = P.dot(R_C)
         U, s, Vt = randomized_svd(to_svd, n_components=np.max(r_vals), n_iter=40, random_state=42)
-
+        
         for r_idx in range(len(r_vals)):
             r = r_vals[r_idx]
             print("r =", r)
@@ -190,4 +190,3 @@ def cv_toeplitz(X_with_lags, N, T, r_vals, sigma_vals, num_folds=10):
     opt_r_idx, opt_sigma_idx = np.unravel_index(ll_vals.mean(axis=0).argmax(), ll_vals.shape[1:])
     r_opt, sigma_opt = r_vals[opt_r_idx], sigma_vals[opt_sigma_idx]
     return ll_vals, r_opt, sigma_opt
-

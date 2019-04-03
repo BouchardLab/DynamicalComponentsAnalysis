@@ -38,6 +38,7 @@ def calc_cross_cov_mats_from_data(X, num_lags, regularization=None, reg_ops=None
             cross_cov = np.dot(X[delta_t:].T, X[:len(X)-delta_t])/(len(X) - delta_t)
             cross_cov_mats[delta_t] = cross_cov
         cov_est = calc_cov_from_cross_cov_mats(cross_cov_mats)
+        
     elif regularization == 'kron':
         if reg_ops is not None:
             if skip in reg_ops.keys():
@@ -123,9 +124,9 @@ def calc_cov_from_cross_cov_mats(cross_cov_mats):
         Big covariance matrix, stationary in time by construction.
     """
 
-    N = cross_cov_mats[0].shape[0]
+    N = cross_cov_mats.shape[1]
     num_lags = len(cross_cov_mats)
-    use_torch = isinstance(cross_cov_mats[0], torch.Tensor)
+    use_torch = isinstance(cross_cov_mats, torch.Tensor)
 
     cross_cov_mats_repeated = []
     for i in range(num_lags):
@@ -167,14 +168,58 @@ def calc_pi_from_cov(cov_2T):
 
     cov_T = cov_2T[:half, :half]
     if use_torch:
-        logdet_T = torch.logdet(cov_T)
-        logdet_2T = torch.logdet(cov_2T)
+        logdet_T = torch.slogdet(cov_T)[1]
+        logdet_2T = torch.slogdet(cov_2T)[1]
     else:
         logdet_T = np.linalg.slogdet(cov_T)[1]
         logdet_2T = np.linalg.slogdet(cov_2T)[1]
 
     PI = (2. * logdet_T - logdet_2T) / np.log(2.)
     return PI
+
+
+def project_cross_cov_mats(cross_cov_mats, proj):
+    """Projects the cross covariance matrices.
+    Parameters
+    ----------
+    cross_cov_mats : np.ndarray, shape (num_lags, N, N)
+        Cross-covariance matrices: cross_cov_mats[dt] is the
+        cross-covariance between X(t) and X(t+dt), where each
+        of X(t) and X(t+dt) is a N-dimensional vector.
+    proj: np.ndarray, shape (N, d), optional
+        If provided, the N-dimensional data are projected onto a d-dimensional
+        basis given by the columns of proj. Then, the mutual information is
+        computed for this d-dimensional timeseries.
+    Returns
+    -------
+    cross_cov_mats_proj : ndarray, shape (num_lags, d, d)
+        Mutual information in bits.
+    """
+    if isinstance(cross_cov_mats, torch.Tensor):
+        use_torch = True
+    elif isinstance(cross_cov_mats[0], torch.Tensor):
+        cross_cov_mats = torch.stack(cross_cov_mats)
+        use_torch = True
+    else:
+        use_torch = False
+
+    if use_torch and isinstance(proj, np.ndarray):
+        proj = torch.tensor(proj, device=cross_cov_mats.device, dtype=cross_cov_mats.dtype)
+
+    T = cross_cov_mats.shape[0] // 2
+    if use_torch:
+        cross_cov_mats_proj = torch.matmul(proj.t().unsqueeze(0),
+                                           torch.matmul(cross_cov_mats,
+                                                        proj.unsqueeze(0)))
+    else:
+        cross_cov_mats_proj = []
+        for i in range(2*T):
+            cross_cov = cross_cov_mats[i]
+            cross_cov_proj = np.dot(proj.T, np.dot(cross_cov, proj))
+            cross_cov_mats_proj.append(cross_cov_proj)
+        cross_cov_mats_proj = np.stack(cross_cov_mats_proj)
+
+    return cross_cov_mats_proj
 
 
 def calc_pi_from_cross_cov_mats(cross_cov_mats, proj=None):
@@ -195,22 +240,8 @@ def calc_pi_from_cross_cov_mats(cross_cov_mats, proj=None):
     PI : float
         Mutual information in bits.
     """
-    use_torch = isinstance(cross_cov_mats[0], torch.Tensor)
-
-    if use_torch and isinstance(proj, np.ndarray):
-        proj = torch.tensor(proj, device=cross_cov_mats[0].device, dtype=cross_cov_mats[0].dtype)
-
-    T = cross_cov_mats.shape[0] // 2
-    cross_cov_mats_proj = []
     if proj is not None:
-        for i in range(2*T):
-            cross_cov = cross_cov_mats[i]
-            if use_torch:
-                cross_cov_proj = torch.mm(proj.t(), torch.mm(cross_cov, proj))
-            else:
-                cross_cov_proj = np.dot(proj.T, np.dot(cross_cov, proj))
-
-            cross_cov_mats_proj.append(cross_cov_proj)
+        cross_cov_mats_proj = project_cross_cov_mats(cross_cov_mats, proj)
     else:
         cross_cov_mats_proj = cross_cov_mats
 

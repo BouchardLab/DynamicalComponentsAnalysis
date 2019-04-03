@@ -95,12 +95,14 @@ class ComplexityComponentsAnalysis(object):
         self.use_scipy = use_scipy
 
     def estimate_cross_covariance(self, X, T=None, regularization=None, reg_ops=None):
+        self.mean_ = X.mean(axis=0, keepdims=True)
         if T is None:
             T = self.T
         else:
             self.T = T
 
-        self.cross_covs = calc_cross_cov_mats_from_data(X, 2*self.T, regularization=regularization, reg_ops=reg_ops)
+        cross_covs = calc_cross_cov_mats_from_data(X, 2*self.T, regularization=regularization, reg_ops=reg_ops)
+        self.cross_covs = torch.tensor(cross_covs, device=self.device, dtype=self.dtype)
 
         return self
 
@@ -127,9 +129,27 @@ class ComplexityComponentsAnalysis(object):
 
         v = torch.tensor(V_init, requires_grad=True,
                          device=self.device, dtype=self.dtype)
-        c = torch.tensor(self.cross_covs, device=self.device, dtype=self.dtype)
+        c = self.cross_covs
 
         if self.use_scipy:
+            if self.verbose:
+                def callback(v_flat):
+                    v_flat_torch = torch.tensor(v_flat,
+                                                requires_grad=True,
+                                                device=self.device,
+                                                dtype=self.dtype)
+                    v_torch = v_flat_torch.reshape(N, d)
+                    #optimizer.zero_grad()
+                    loss = build_loss(c, d)(v_torch)
+                    reg_val = ortho_reg_fn(v_torch, self.ortho_lambda)
+                    loss_no_reg = loss - reg_val
+                    loss = loss.detach().cpu().numpy()
+                    reg_val = reg_val.detach().cpu().numpy()
+                    print("PI: {} bits, reg: {}".format(str(np.round(-loss, 4)),
+                                                        str(np.round(reg_val, 4))))
+                callback(V_init)
+            else:
+                callback = None
             def f_df(v_flat):
                 v_flat_torch = torch.tensor(v_flat,
                                             requires_grad=True,
@@ -140,9 +160,10 @@ class ComplexityComponentsAnalysis(object):
                 loss = build_loss(c, d)(v_torch)
                 loss.backward()
                 grad = v_flat_torch.grad
-                return loss.detach().cpu().numpy(), grad.detach().cpu().numpy()
+                return loss.detach().cpu().numpy().astype(float), grad.detach().cpu().numpy().astype(float)
             opt = minimize(f_df, V_init.ravel(), method='L-BFGS-B', jac=True,
-                           options={'disp': self.verbose, 'ftol': 1e-10, 'gtol': 1e-10, 'maxfun': 10**10, 'maxiter': 10**10, 'maxls': 20})
+                           options={'disp': self.verbose, 'ftol': 1e-10, 'gtol': 1e-10, 'maxfun': 10**10, 'maxiter': 10**10, 'maxls': 20},
+                           callback=callback)
             v = opt.x.reshape(N, d)
         else:
             optimizer = torch.optim.LBFGS([v], max_eval=10**10, max_iter=10**10, tolerance_grad=1e-10, tolerance_change=1e-10)
@@ -175,7 +196,7 @@ class ComplexityComponentsAnalysis(object):
         return self
 
     def transform(self, X):
-        return X.dot(self.coef_)
+        return (X - self.mean_).dot(self.coef_)
 
     def fit_transform(self, X, d=None, T=None, regularization=None,
                       reg_ops=None):

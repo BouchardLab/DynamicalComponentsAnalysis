@@ -68,9 +68,15 @@ def decoding_score_kf(X_train, X_test, Y_train, Y_test):
 	return np.mean(r_xy)
 
 def decoding_score_linear(X_train, X_test, Y_train, Y_test):
-	X_train = np.hstack((X_train, np.ones((spikes_train.shape[0], 1))))
-	X_test = np.hstack((X_test, np.ones((spikes_test.shape[0], 1))))
+	X_train = np.hstack((X_train, np.ones((X_train.shape[0], 1))))
+	X_test = np.hstack((X_test, np.ones((X_test.shape[0], 1))))
 	beta = np.dot(np.linalg.inv( np.dot(X_train.T, X_train) ), np.dot(X_train.T, Y_train))
 	pred_Y = np.dot(X_test, beta)
-	err = np.mean((pred_Y - Y_test)**2)
-	return 10.0 - err #To make higher numbers better
+	#err = np.mean((pred_Y - Y_test)**2)
+	r_xy = [scipy.stats.pearsonr(Y_test[:, i], pred_Y[:, i])[0] for i in range(2)]
+	return np.mean(r_xy)
+
+
+
+
+

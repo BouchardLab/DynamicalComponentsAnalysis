@@ -113,9 +113,15 @@ def toeplitz_reg(cov, N, T, r):
 	return cov_reg
 
 def toeplitz_reg_and_taper(cov, N, T, r, sigma):
-    cov_reg = toeplitz_reg(cov, N, T, r)
+    cov_reg = toeplitz_reg_threshold(cov, N, T, r)
     cov_reg_taper = taper_cov(cov_reg, N, T, sigma)
     return cov_reg_taper
+
+def toeplitz_reg_taper_shrink(cov, N, T, r, sigma, alpha):
+    cov_reg = toeplitz_reg_threshold(cov, N, T, r)
+    cov_reg_taper = taper_cov(cov_reg, N, T, sigma)
+    cov_reg_taper_shrink = (1. - alpha)*cov_reg_taper + alpha*np.eye(N*T)
+    return cov_reg_taper_shrink
 
 def non_toeplitz_reg(cov, N, T, r):
 	R_C = pv_rearrange(cov, N, T)
@@ -125,13 +131,13 @@ def non_toeplitz_reg(cov, N, T, r):
 	return cov_reg
 
 def toeplitz_reg_threshold(cov, N, T, r):
-	R_C = pv_rearrange(cov, N, T)
-	P = build_P(T)
-	to_svd = P.dot(R_C)
-	U, s, Vt = randomized_svd(to_svd, n_components=r+1, n_iter=40, random_state=42)
-	trunc_svd = U[:, :-1].dot(np.diag(s[:-1] - s[-1])).dot(Vt[:-1, :])
-	cov_reg = pv_rearrange_inv(P.T.dot(trunc_svd), N, T)
-	return cov_reg
+    R_C = pv_rearrange(cov, N, T)
+    P = build_P(T)
+    to_svd = P.dot(R_C)
+    U, s, Vt = randomized_svd(to_svd, n_components=r+1, n_iter=40, random_state=42)
+    trunc_svd = U[:, :-1].dot(np.diag(s[:-1] - s[-1])).dot(Vt[:-1, :])
+    cov_reg = pv_rearrange_inv(P.T.dot(trunc_svd), N, T)
+    return cov_reg
 
 def non_toeplitz_reg_threshold(cov, N, T, r):
     R_C = pv_rearrange(cov, N, T)
@@ -155,11 +161,11 @@ def taper_cov(cov, N, T, sigma):
     result = full_kernel * cov
     return result
 
-def cv_toeplitz(X_with_lags, N, T, r_vals, sigma_vals, num_folds=10):
+def cv_toeplitz(X_with_lags, N, T, r_vals, sigma_vals, alpha_vals, num_folds=10):
     fold_size = int(np.floor(len(X_with_lags)/num_folds))
     d = N*T
     P = build_P(T)
-    ll_vals = np.zeros((num_folds, len(r_vals), len(sigma_vals)))
+    ll_vals = np.zeros((num_folds, len(r_vals), len(sigma_vals), len(alpha_vals)))
 
     for cv_iter in range(num_folds):
         print("fold =", cv_iter+1)
@@ -172,7 +178,8 @@ def cv_toeplitz(X_with_lags, N, T, r_vals, sigma_vals, num_folds=10):
         R_C = pv_rearrange(cov_train, N, T)
         to_svd = P.dot(R_C)
         U, s, Vt = randomized_svd(to_svd, n_components=np.max(r_vals), n_iter=40, random_state=42)
-        
+        diag_part = cov_train[:N, :N]
+
         for r_idx in range(len(r_vals)):
             r = r_vals[r_idx]
             print("r =", r)
@@ -180,13 +187,40 @@ def cv_toeplitz(X_with_lags, N, T, r_vals, sigma_vals, num_folds=10):
                 trunc_svd = to_svd
             else:
                 trunc_svd = U[:, :r].dot(np.diag(s[:r] - s[r])).dot(Vt[:r, :])
-            cov_reg = pv_rearrange_inv(P.T.dot(trunc_svd), N, T)
-
+            cov_kron = pv_rearrange_inv(P.T.dot(trunc_svd), N, T)
             for sigma_idx in range(len(sigma_vals)):
-              sigma = sigma_vals[sigma_idx]
-              cov_reg_tapered = taper_cov(cov_reg, N, T, sigma)
-              ll_vals[cv_iter, r_idx, sigma_idx] = gaussian_log_likelihood(cov_reg_tapered, cov_test, num_samples)
+                sigma = sigma_vals[sigma_idx]
+                cov_kron_tapered = taper_cov(cov_kron, N, T, sigma)
+                for alpha_idx in range(len(alpha_vals)):
+                    alpha = alpha_vals[alpha_idx]
+                    cov_kron_tapered_shrunk = (1. - alpha)*cov_kron_tapered + alpha*np.eye(N*T)
+                    ll = gaussian_log_likelihood(cov_kron_tapered_shrunk, cov_test, num_samples)
+                    ll_vals[cv_iter, r_idx, sigma_idx, alpha_idx] = ll
 
-    opt_r_idx, opt_sigma_idx = np.unravel_index(ll_vals.mean(axis=0).argmax(), ll_vals.shape[1:])
-    r_opt, sigma_opt = r_vals[opt_r_idx], sigma_vals[opt_sigma_idx]
-    return ll_vals, r_opt, sigma_opt
+    opt_idx = np.unravel_index(ll_vals.mean(axis=0).argmax(), ll_vals.shape[1:])
+    return ll_vals, opt_idx
+
+
+"""
+def shrinkage_likelihood(X, alpha):
+    n, p = X.shape
+    beta = (1 - alpha)/(n - 1)
+    S = np.dot(X.T, X)/n
+    G_alpha = n*beta*S + alpha*np.eye(p)
+    G_alpha_inv = scipy.linalg.inv(G_alpha)
+    log_det_G_alpha = np.linalg.slogdet(G_alpha)[1]
+    part_1 = 0.5*(p*np.log(2*np.pi) + log_det_G_alpha)
+    part_2 = 0
+    #n_prime = n
+    #random_idx = np.random.choice(np.arange(n), size=n_prime)
+    print("Start...")
+    for k in range(n):
+        x_k = X[k, :]
+        r_k = x_k.dot(G_alpha_inv).dot(x_k)
+        part_2 += np.log(1 - beta*r_k) + r_k/(1 - beta*r_k)
+    ll = part_1 + (1/(2*n))*part_2
+    return ll
+
+alpha_vals = np.linspace(0, 1, 20)
+ll_vals = np.array([shrinkage_likelihood(X_lags_downsample, alpha) for alpha in alpha_vals])
+"""

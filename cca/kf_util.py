@@ -155,7 +155,6 @@ Q, R are symmetric so transposing/not transposing is immaterial
 def steady_state_a_priori_P(A, H, Q, R, verbose=False):
 	Q_prime = Q + np.eye(Q.shape[0])*10**-10
 	R_prime = R + np.eye(R.shape[0])*10**-10
-	#print("ADDED NOISE")
 	return scipy.linalg.solve_discrete_are(A.T, H.T, Q_prime, R_prime)
 
 

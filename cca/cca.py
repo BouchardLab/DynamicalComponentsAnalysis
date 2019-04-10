@@ -129,7 +129,10 @@ class ComplexityComponentsAnalysis(object):
 
         v = torch.tensor(V_init, requires_grad=True,
                          device=self.device, dtype=self.dtype)
+        
         c = self.cross_covs
+        if not isinstance(c, torch.Tensor):
+        	c = torch.tensor(c, device=self.device, dtype=self.dtype)
 
         if self.use_scipy:
             if self.verbose:

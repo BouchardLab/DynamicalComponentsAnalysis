@@ -2,16 +2,18 @@ import numpy as np
 import scipy as sp
 import torch
 import matplotlib.pyplot as plt
+from math import floor
 
 from cca.kron_pca import cv_toeplitz
 
 def calc_cross_cov_mats_from_data(X, num_lags, regularization=None, reg_ops=None):
-    """Computes N-by-N cross-covariance matrices, where N is the dimensionality
-    of the time series data, for time lags up to num_lags - 1.
+    """Compute a N-by-N cross-covariance matrix, where N is the data dimensionality,
+    for each time lag up to num_lags-1.
+
     Parameters
     ----------
     X : np.ndarray, shape (# time-steps, N)
-        The multidimensional time series data from which the cross-covariance
+        The N-dimensional time series data from which the cross-covariance
         matrices are computed.
     num_lags: int
         The number of time lags.
@@ -31,34 +33,32 @@ def calc_cross_cov_mats_from_data(X, num_lags, regularization=None, reg_ops=None
     N = X.shape[1]
 
     if regularization is None:
-
-        #Compute N-by-N cross-covariance matrices for 0 <= delta_t <= num_lags - 1
         cross_cov_mats = np.zeros((num_lags, N, N))
         for delta_t in range(num_lags):
             cross_cov = np.dot(X[delta_t:].T, X[:len(X)-delta_t])/(len(X) - delta_t)
             cross_cov_mats[delta_t] = cross_cov
         cov_est = calc_cov_from_cross_cov_mats(cross_cov_mats)
-
+        
     elif regularization == 'kron':
-
-        skip = reg_ops["skip"]
-        num_folds = reg_ops["num_folds"]
-
-        n = int(np.floor((len(X) - num_lags)/skip) + 1) #is this right?
-        X_with_lags = np.zeros((n, N*num_lags))
-        for i in range(n):
-            X_with_lags[i, :] = X[i*skip : i*skip + num_lags, :].ravel()
-
-        ll, cov_est = cv_toeplitz(X_with_lags, N, num_lags, num_folds=num_folds, max_r=2*num_lags - 1)
-        plt.imshow(cov_est)
-        plt.show()
+        if reg_ops is not None:
+            if skip in reg_ops.keys():
+                skip = reg_ops["skip"]
+            else:
+                skip = 1
+            if "num_folds" in reg_ops.keys():
+                num_folds = reg_ops["num_folds"]
+            else:
+                num_folds = 5
+        X_with_lags = form_lag_matrix(X, num_lags, skip=skip)
+        r_vals = np.arange(2*T - 1) + 1
+        sigma_vals = np.linspace(1, 4*T + 1, 10)
+        _, r_opt, sigma_opt = cv_toeplitz(X_with_lags, N, num_lags, r_vals, sigma_vals, num_folds=num_folds)
         cross_cov_mats = calc_cross_cov_mats_from_cov(N, num_lags, cov_est)
 
-    w, _ = np.linalg.eigh(cov_est)
+    w = scipy.linalg.eigvalsh(cov_est)
     min_eig = np.min(w)
     if min_eig <= 0:
         print("Warning: spatiotemporal covariance matrix not PSD (min eig = " + str(min_eig) + ")")
-        print(regularization)
 
     return cross_cov_mats
 
@@ -90,7 +90,6 @@ def calc_cross_cov_mats_from_cov(N, num_lags, cov):
         cross_cov_mats = np.zeros((num_lags, N, N))
 
     for delta_t in range(num_lags):
-
         if use_torch:
             to_avg_lower = torch.zeros((num_lags-delta_t, N, N))
             to_avg_upper = torch.zeros((num_lags-delta_t, N, N))
@@ -107,7 +106,7 @@ def calc_cross_cov_mats_from_cov(N, num_lags, cov):
             cross_cov_mats[delta_t, :, :] = 0.5*(torch.mean(to_avg_lower, axis=0) + torch.mean(to_avg_upper, axis=0).T )
         else:
             cross_cov_mats[delta_t, :, :] = 0.5*(np.mean(to_avg_lower, axis=0) + np.mean(to_avg_upper, axis=0).T )
-
+            
     return cross_cov_mats
 
 def calc_cov_from_cross_cov_mats(cross_cov_mats):

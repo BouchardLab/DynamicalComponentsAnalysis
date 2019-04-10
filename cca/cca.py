@@ -81,11 +81,13 @@ class ComplexityComponentsAnalysis(object):
         Method for initializing the projection matrix.
 
     """
-    def __init__(self, d=None, T=None, init="random", tol=1e-6, ortho_lambda=10.,
-                 verbose=False, use_scipy=True, device="cpu", dtype=torch.float64):
+    def __init__(self, d=None, T=None, init="random", n_init=1, tol=1e-6,
+                 ortho_lambda=10., verbose=False, use_scipy=True,
+                 device="cpu", dtype=torch.float64):
         self.d = d
         self.T = T
         self.init = init
+        self.n_init = n_init
         self.tol = tol
         self.ortho_lambda = ortho_lambda
         self.verbose=verbose
@@ -106,7 +108,22 @@ class ComplexityComponentsAnalysis(object):
 
         return self
 
-    def fit_projection(self, d=None):
+    def fit_projection(self, d=None, n_init=None):
+        if n_init is None:
+            n_init = self.n_init
+        pis = []
+        coefs = []
+        for ii in range(n_init):
+            coef, pi = self._fit_projection(d=d)
+            pis.append(pi)
+            coefs.append(coef)
+        print(pis)
+        print(coefs)
+        idx = np.argmax(pis)
+        print(idx, len(pis), len(coefs))
+        self.coef_ = coefs[idx]
+
+    def _fit_projection(self, d=None):
         if d is None:
             d = self.d
         if self.cross_covs is None:
@@ -129,7 +146,7 @@ class ComplexityComponentsAnalysis(object):
 
         v = torch.tensor(V_init, requires_grad=True,
                          device=self.device, dtype=self.dtype)
-        
+
         c = self.cross_covs
         if not isinstance(c, torch.Tensor):
         	c = torch.tensor(c, device=self.device, dtype=self.dtype)
@@ -188,9 +205,8 @@ class ComplexityComponentsAnalysis(object):
 
         # Orthonormalize the basis prior to returning it
         V_opt = scipy.linalg.orth(v)
-        self.coef_ = V_opt
-
-        return self
+        final_pi = calc_pi_from_cross_cov_mats(c, V_opt).detach().cpu().numpy()
+        return V_opt, final_pi
 
     def fit(self, X, d=None, T=None, regularization=None, reg_ops=None):
         self.estimate_cross_covariance(X, T=T, regularization=regularization,

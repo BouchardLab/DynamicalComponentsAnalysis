@@ -161,14 +161,15 @@ def taper_cov(cov, N, T, sigma):
     result = full_kernel * cov
     return result
 
-def cv_toeplitz(X_with_lags, N, T, r_vals, sigma_vals, alpha_vals, num_folds=10):
+def cv_toeplitz(X_with_lags, N, T, r_vals, sigma_vals, alpha_vals, num_folds=10, verbose=False):
     fold_size = int(np.floor(len(X_with_lags)/num_folds))
     d = N*T
     P = build_P(T)
     ll_vals = np.zeros((num_folds, len(r_vals), len(sigma_vals), len(alpha_vals)))
 
     for cv_iter in range(num_folds):
-        print("fold =", cv_iter+1)
+        if verbose:
+        	print("fold =", cv_iter+1)
 
         X_train = np.concatenate((X_with_lags[:cv_iter*fold_size], X_with_lags[(cv_iter+1)*fold_size:]), axis=0)
         X_test = X_with_lags[cv_iter*fold_size : (cv_iter+1)*fold_size]
@@ -182,7 +183,8 @@ def cv_toeplitz(X_with_lags, N, T, r_vals, sigma_vals, alpha_vals, num_folds=10)
 
         for r_idx in range(len(r_vals)):
             r = r_vals[r_idx]
-            print("r =", r)
+            if verbose:
+            	print("r =", r)
             if r_idx == len(r_vals) - 1:
                 trunc_svd = to_svd
             else:

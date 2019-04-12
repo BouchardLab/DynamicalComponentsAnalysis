@@ -50,10 +50,10 @@ def log_likelihood(mu, sigma, y):
     d = y.size
     log_det_cov = np.linalg.slogdet(sigma)[1]
     y_minus_mean = y - mu
-    cov_y = np.dot(y_minus_mean.T, y_minus_mean)
+    term3 = np.dot(y_minus_mean.T.ravel(), np.linalg.solve(sigma, y_minus_mean.T).ravel())
     log_likelihood = (-0.5*d*np.log(2*np.pi)
                       - 0.5*log_det_cov
-                      - 0.5*np.trace(np.dot(np.linalg.inv(sigma), cov_y)))
+                      - 0.5*term3)
     return log_likelihood
 
 
@@ -114,7 +114,7 @@ class GaussianProcessFactorAnalysis(object):
     def _em_iter(self, y, big_K, big_C, big_R):
         """One step of EM.
 
-        Exact updates for d, C, and R. Optimizatino for tau
+        Exact updates for d, C, and R. Optimization for tau
 
         Parameters
         ----------
@@ -252,14 +252,17 @@ class SlowFeatureAnalysis(object):
         X : ndarray (time, features)
             Data to fit SFA model to.
         """
-        X_stan = X - X.mean(axis=0, keepdims=True)
+        self.mean_ = X.mean(axis=0, keepdims=True)
+        X_stan = X - self.mean_
         uX, sX, vhX = np.linalg.svd(X_stan, full_matrices=False)
-        whiten = vhX.T @ np.diag(1./sX)
+        whiten = vhX.T @ np.diag(1. / sX)
         Xw = X_stan @ whiten
         Xp = np.diff(Xw, axis=0)
         up, sp, vhp = np.linalg.svd(Xp, full_matrices=False)
         proj = vhp.T
         self.coef_ = whiten @ proj[:, ::-1][:, :self.n_components]
+        self.coef_ /= np.linalg.norm(self.coef_, axis=0, keepdims=True)
+        return self
 
     def transform(self, X):
         """Transform the data according to the fit SFA model.
@@ -271,7 +274,7 @@ class SlowFeatureAnalysis(object):
         """
         if self.coef_ is None:
             raise ValueError
-        return X @ self.coef_
+        return (X - self.mean_) @ self.coef_
 
     def fit_transform(self, X):
         """Fit the SFA model and transform the features.
@@ -282,4 +285,4 @@ class SlowFeatureAnalysis(object):
             Data to fit SFA model to and then transformk.
         """
         self.fit(X)
-        return X @ self.coef_
+        return (X - self.mean_) @ self.coef_

@@ -60,7 +60,8 @@ def calc_pi_for_gp(T, N, kernel):
     return PI
 
 
-def gen_gp_kernel(kernel_type, spatial_scale, temporal_scale):
+def gen_gp_kernel(kernel_type, spatial_scale, temporal_scale,
+                  local_noise=0.):
     """Generates a specified type of Kernel for a spatiotemporal Gaussian
     process.
     Parameters
@@ -77,12 +78,39 @@ def gen_gp_kernel(kernel_type, spatial_scale, temporal_scale):
         Kernel of the form K(t1, t2, x1, x2).
     """
 
+    def squared_exp(t1, t2, x1, x2):
+        rval = np.exp(-(t1-t2)**2/temporal_scale**2 - (x1-x2)**2/spatial_scale**2)
+        if local_noise > 0.:
+            local_mask = np.logical_and(np.equal(t1, t2), np.equal(x1, x2))
+            rval += local_noise * local_mask
+            rval /= rval.max()
+        return rval
+
+    def exp(t1, t2, x1, x2):
+        rval = np.exp(-np.abs(t1-t2)/temporal_scale - np.abs(x1-x2)/spatial_scale)
+        if local_noise > 0.:
+            local_mask = np.logical_and(np.equal(t1, t2), np.equal(x1, x2))
+            rval += local_noise * local_mask
+            rval /= rval.max()
+        return rval
+
+    def switch(t1, t2, x1, x2):
+        mask = abs(t1 - t2) >= temporal_scale
+        ex = exp(t1, t2, x1, x2)
+        sq = squared_exp(t1, t2, x1, x2)
+        rval = mask * ex + (1. - mask) * sq
+        if local_noise > 0.:
+            local_mask = np.logical_and(np.equal(t1, t2), np.equal(x1, x2))
+            rval += local_noise * local_mask
+            rval /= rval.max()
+        return rval
+
     if kernel_type == "squared_exp":
-        def K(t1, t2, x1, x2):
-            return np.exp(-(t1-t2)**2/temporal_scale**2 - (x1-x2)**2/spatial_scale**2)
+        K = squared_exp
     elif kernel_type == "exp":
-        def K(t1, t2, x1, x2):
-            return np.exp(-np.abs(t1-t2)/temporal_scale - np.abs(x1-x2)/spatial_scale)
+        K = exp
+    elif kernel_type == "switch":
+        K = switch
     return K
 
 
@@ -181,7 +209,7 @@ def gen_lorenz_system(T, integration_dt, data_dt):
         z_dot = x * y - beta * z
         return (x_dot, y_dot, z_dot)
 
-    x_0 = np.ones(3)    
+    x_0 = np.ones(3)
     t = np.arange(0, T, integration_dt)
     X = scipy.integrate.odeint(dx_dt, x_0, t)
 

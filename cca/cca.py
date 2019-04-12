@@ -117,10 +117,7 @@ class ComplexityComponentsAnalysis(object):
             coef, pi = self._fit_projection(d=d)
             pis.append(pi)
             coefs.append(coef)
-        print(pis)
-        print(coefs)
         idx = np.argmax(pis)
-        print(idx, len(pis), len(coefs))
         self.coef_ = coefs[idx]
 
     def _fit_projection(self, d=None):

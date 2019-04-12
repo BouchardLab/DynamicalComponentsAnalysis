@@ -7,7 +7,7 @@ __all__ = ['GaussianProcessFactorAnalysis',
            'SlowFeatureAnalysis']
 
 def calc_K(tau, delta_t, var_n):
-    """Calculates the GP kernel autocorrelation.
+    """Calculates the GP kernel autocovariance.
     """
     var_f = 1. - var_n
     rval = var_f * np.exp(-(delta_t)**2 / (2. * tau**2))
@@ -50,10 +50,11 @@ def log_likelihood(mu, sigma, y):
     d = y.size
     log_det_cov = np.linalg.slogdet(sigma)[1]
     y_minus_mean = y - mu
-    cov_y = np.dot(y_minus_mean.T, y_minus_mean)
+    term3 = np.dot(y_minus_mean.T.ravel(),
+                   np.linalg.solve(sigma, y_minus_mean.T).ravel())
     log_likelihood = (-0.5*d*np.log(2*np.pi)
                       - 0.5*log_det_cov
-                      - 0.5*np.trace(np.dot(np.linalg.inv(sigma), cov_y)))
+                      - 0.5*term3)
     return log_likelihood
 
 
@@ -89,8 +90,10 @@ class GaussianProcessFactorAnalysis(object):
         ----------
         y : ndarray (time, features)
         """
+        self.mean_ = y.mean(axis=0, keepdims=True)
+        y = y - self.mean_
         T, n = y.shape
-        model = FA(self.n_factors)
+        model = FA(self.n_factors, svd_method='lapack')
         model.fit(y)
         self.R_ = np.diag(model.noise_variance_)
         self.C_ = model.components_.T
@@ -105,7 +108,7 @@ class GaussianProcessFactorAnalysis(object):
         big_y = y.ravel()
         ll = log_likelihood(big_d, y_cov, big_y)
         if self.verbose:
-            print("log likelihood:", ll)
+            print("FA log likelihood:", ll)
 
         for ii in range(self.max_iter):
             self._em_iter(y, big_K, big_C, big_R)
@@ -114,7 +117,7 @@ class GaussianProcessFactorAnalysis(object):
     def _em_iter(self, y, big_K, big_C, big_R):
         """One step of EM.
 
-        Exact updates for d, C, and R. Optimizatino for tau
+        Exact updates for d, C, and R. Optimization for tau
 
         Parameters
         ----------
@@ -130,23 +133,50 @@ class GaussianProcessFactorAnalysis(object):
         if self.verbose:
             #Compute log likelihood under current params
             ll = log_likelihood(big_d, y_cov, big_y)
-            print("log likelihood:", ll)
+            print("Pre update log likelihood:", ll)
+
         x = mean.reshape(T, -1)
-        # TODO: could do this just along the block diagonal
         big_xxp = cov + np.outer(mean, mean)
-        xxp = np.zeros((self.n_factors + 1, self.n_factors + 1))
+        nf = self.n_factors
+        xxp = np.zeros((nf + 1, nf + 1))
         for t in range(T):
-            xxp[:self.n_factors, :self.n_factors] += big_xxp[t *self.n_factors:(t + 1) * self.n_factors,
-                                                             t *self.n_factors:(t + 1) * self.n_factors]
-        xxp[-1, -1] = 1.
+            sl = slice(t * nf, (t + 1) * nf)
+            xxp[:nf, :nf] += big_xxp[sl, sl]
+        xxp[-1, -1] = T
         xxp[:-1, -1] = x.sum(axis=0)
         xxp[-1, :-1] = x.sum(axis=0)
-        Cd = y.T.dot(np.concatenate((x, np.ones((T, 1))), axis=1)).dot(np.linalg.inv(xxp))
+        yx = y.T.dot(np.concatenate((x, np.ones((T, 1))), axis=1))
+        Cd = np.linalg.solve(xxp, yx.T).T
         self.C_ = Cd[:, :-1]
+        if self.verbose:
+            #Compute log likelihood under current params
+            ll = self._calc_loglikelihood(y, T)
+            print("C_ update log likelihood:", ll)
         self.d_ = Cd[:, -1]
+        if self.verbose:
+            #Compute log likelihood under current params
+            ll = self._calc_loglikelihood(y, T)
+            print("d_ update log likelihood:", ll)
         dy = y - self.d_[np.newaxis]
         self.R_ = np.diag(np.diag(dy.T.dot(dy) - dy.T.dot(x).dot(self.C_.T))) / T
+        if self.verbose:
+            #Compute log likelihood under current params
+            ll = self._calc_loglikelihood(y, T)
+            print("Exact update log likelihood:", ll)
         self.tau_ = self._optimize_tau(self.tau_, T, big_xxp)
+        if self.verbose:
+            #Compute log likelihood under current params
+            ll = self._calc_loglikelihood(y, T)
+            print("tau update log likelihood:", ll)
+            print()
+
+    def _calc_loglikelihood(self, y, T):
+        big_y = y.ravel()
+        big_d = np.tile(self.d_, T)
+        mean, big_K, big_C, big_R, big_dy, KCt, KCt_CKCtR_inv = self._E_mean(y)
+        cov = big_K - KCt_CKCtR_inv.dot(KCt.T)
+        y_cov = big_C.dot(KCt) + big_R
+        return log_likelihood(big_d, y_cov, big_y)
 
 
     def _optimize_tau(self, tau_init, T, Sigma_mu_mu_x):
@@ -185,6 +215,8 @@ class GaussianProcessFactorAnalysis(object):
                 dEdKi = .5 *(-Ki_inv + Ki_inv.dot(xpx).dot(Ki_inv))
                 dKidti = var_f * (delta_t**2 / np.exp(lti)**3) * np.exp( - delta_t**2 / (2 * np.exp(lti)**2 ))
                 df[ii] = np.trace( np.dot(dEdKi.T, dKidti) ) * np.exp(lti)
+            if self.verbose:
+                print('tau opt', f)
 
             return -f, -df
 
@@ -212,7 +244,7 @@ class GaussianProcessFactorAnalysis(object):
         big_dy = big_y - big_d
         KCt = big_K.dot(big_C.T)
 
-        KCt_CKCtR_inv = KCt.dot(np.linalg.inv(big_C.dot(KCt) + big_R))
+        KCt_CKCtR_inv = np.linalg.solve((big_C.dot(KCt) + big_R).T, KCt.T).T
         mean = KCt_CKCtR_inv.dot(big_dy)
         return mean, big_K, big_C, big_R, big_dy, KCt, KCt_CKCtR_inv
 
@@ -228,7 +260,7 @@ class GaussianProcessFactorAnalysis(object):
         x : ndarray (time, n_factors)
         """
         T, n = y.shape
-        x, _, _, _, _, _, _ = self._E_mean(y)
+        x, _, _, _, _, _, _ = self._E_mean(y - self.mean_)
         return x.reshape(T, self.n_factors)
 
 
@@ -252,14 +284,17 @@ class SlowFeatureAnalysis(object):
         X : ndarray (time, features)
             Data to fit SFA model to.
         """
-        X_stan = X - X.mean(axis=0, keepdims=True)
+        self.mean_ = X.mean(axis=0, keepdims=True)
+        X_stan = X - self.mean_
         uX, sX, vhX = np.linalg.svd(X_stan, full_matrices=False)
-        whiten = vhX.T @ np.diag(1./sX)
+        whiten = vhX.T @ np.diag(1. / sX)
         Xw = X_stan @ whiten
         Xp = np.diff(Xw, axis=0)
         up, sp, vhp = np.linalg.svd(Xp, full_matrices=False)
         proj = vhp.T
         self.coef_ = whiten @ proj[:, ::-1][:, :self.n_components]
+        self.coef_ /= np.linalg.norm(self.coef_, axis=0, keepdims=True)
+        return self
 
     def transform(self, X):
         """Transform the data according to the fit SFA model.
@@ -271,7 +306,7 @@ class SlowFeatureAnalysis(object):
         """
         if self.coef_ is None:
             raise ValueError
-        return X @ self.coef_
+        return (X - self.mean_) @ self.coef_
 
     def fit_transform(self, X):
         """Fit the SFA model and transform the features.
@@ -282,4 +317,4 @@ class SlowFeatureAnalysis(object):
             Data to fit SFA model to and then transformk.
         """
         self.fit(X)
-        return X @ self.coef_
+        return (X - self.mean_) @ self.coef_

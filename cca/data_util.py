@@ -1,6 +1,7 @@
 import numpy as np
 import h5py
 from math import ceil
+import pickle
 
 def sum_over_chunks(X, stride):
     zero_padded = np.zeros((stride*ceil(X.shape[0]/stride), X.shape[1]))
@@ -55,7 +56,7 @@ def load_sabes_data(filename, bin_width_s=0.1, session=None):
     X, Y = sum_over_chunks(X, chunk_size), sum_over_chunks(Y, chunk_size)/chunk_size
     return X, Y
 
-def load_miller_data(filename, bin_width_s=0.1):
+def load_neuro_data(filename, bin_width_s=0.1):
     file = open(filename, "rb")
     data = pickle.load(file)
     X, Y = data[0], data[1]
@@ -63,3 +64,30 @@ def load_miller_data(filename, bin_width_s=0.1):
     chunk_size = int(np.round(bin_width_s / .05))
     X, Y = sum_over_chunks(X, chunk_size), sum_over_chunks(Y, chunk_size)/chunk_size
     return X, Y
+
+
+def load_mocap_data(filename, z_score=True):
+	angles = []
+	with open(filename) as f:
+		#Skip header
+		line = f.readline().strip()
+		while line != ":DEGREES":
+			line = f.readline().strip()
+		#Parse body
+		line = f.readline().strip()
+		cur_angles = None
+		while line:
+			if line.isdigit():
+				#New time-step
+				if cur_angles is not None:
+					angles.append(cur_angles)
+				cur_angles = []
+			else:
+				#Continue adding angles to current time-step
+				parts = line.split(" ")
+				joint_name = parts[0]
+				joint_angles = [float(angle_str) for angle_str in parts[1:]]
+				cur_angles += joint_angles
+			line = f.readline().strip()
+	angles = np.array(angles)
+	return angles

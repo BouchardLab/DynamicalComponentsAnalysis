@@ -150,33 +150,37 @@ class GaussianProcessFactorAnalysis(object):
         self.C_ = Cd[:, :-1]
         if self.verbose:
             #Compute log likelihood under current params
-            ll = self._calc_loglikelihood(y, T)
+            ll = self._calc_loglikelihood(y)
             print("C_ update log likelihood:", ll)
         self.d_ = Cd[:, -1]
         if self.verbose:
             #Compute log likelihood under current params
-            ll = self._calc_loglikelihood(y, T)
+            ll = self._calc_loglikelihood(y)
             print("d_ update log likelihood:", ll)
         dy = y - self.d_[np.newaxis]
         self.R_ = np.diag(np.diag(dy.T.dot(dy) - dy.T.dot(x).dot(self.C_.T))) / T
         if self.verbose:
             #Compute log likelihood under current params
-            ll = self._calc_loglikelihood(y, T)
+            ll = self._calc_loglikelihood(y)
             print("Exact update log likelihood:", ll)
         self.tau_ = self._optimize_tau(self.tau_, T, big_xxp)
         if self.verbose:
             #Compute log likelihood under current params
-            ll = self._calc_loglikelihood(y, T)
+            ll = self._calc_loglikelihood(y)
             print("tau update log likelihood:", ll)
             print()
 
-    def _calc_loglikelihood(self, y, T):
+    def _calc_loglikelihood(self, y):
+        T, _ = y.shape
         big_y = y.ravel()
         big_d = np.tile(self.d_, T)
         mean, big_K, big_C, big_R, big_dy, KCt, KCt_CKCtR_inv = self._E_mean(y)
         cov = big_K - KCt_CKCtR_inv.dot(KCt.T)
         y_cov = big_C.dot(KCt) + big_R
         return log_likelihood(big_d, y_cov, big_y)
+
+    def score(self, y):
+        return self._calc_loglikelihood(y)
 
 
     def _optimize_tau(self, tau_init, T, Sigma_mu_mu_x):

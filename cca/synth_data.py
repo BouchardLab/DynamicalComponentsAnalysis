@@ -83,7 +83,6 @@ def gen_gp_kernel(kernel_type, spatial_scale, temporal_scale,
         if local_noise > 0.:
             local_mask = np.logical_and(np.equal(t1, t2), np.equal(x1, x2))
             rval += local_noise * local_mask
-            rval /= rval.max()
         return rval
 
     def exp(t1, t2, x1, x2):
@@ -91,7 +90,6 @@ def gen_gp_kernel(kernel_type, spatial_scale, temporal_scale,
         if local_noise > 0.:
             local_mask = np.logical_and(np.equal(t1, t2), np.equal(x1, x2))
             rval += local_noise * local_mask
-            rval /= rval.max()
         return rval
 
     def switch(t1, t2, x1, x2):
@@ -102,7 +100,6 @@ def gen_gp_kernel(kernel_type, spatial_scale, temporal_scale,
         if local_noise > 0.:
             local_mask = np.logical_and(np.equal(t1, t2), np.equal(x1, x2))
             rval += local_noise * local_mask
-            rval /= rval.max()
         return rval
 
     if kernel_type == "squared_exp":

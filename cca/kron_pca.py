@@ -202,9 +202,6 @@ def cv_toeplitz(X_with_lags, N, T, r_vals, sigma_vals, alpha_vals, num_folds=10,
     opt_idx = np.unravel_index(ll_vals.mean(axis=0).argmax(), ll_vals.shape[1:])
     return ll_vals, opt_idx
 
-def _toeplitz_inner_loops(tt_NN_cov, r, sigma, alpha)
-
-
 """
 def shrinkage_likelihood(X, alpha):
     n, p = X.shape

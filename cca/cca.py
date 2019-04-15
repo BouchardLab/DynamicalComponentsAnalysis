@@ -3,7 +3,8 @@ import scipy.stats
 from scipy.optimize import minimize
 import torch
 
-from cca.cov_util import calc_cross_cov_mats_from_data, calc_pi_from_cross_cov_mats
+from .cov_util import (calc_cross_cov_mats_from_data,
+                       calc_pi_from_cross_cov_mats)
 
 __all__ = ["ComplexityComponentsAnalysis"]
 

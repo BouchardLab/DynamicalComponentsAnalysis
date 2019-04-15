@@ -2,7 +2,8 @@ import numpy as np
 import scipy as sp
 import torch
 
-from cca.kron_pca import cv_toeplitz, form_lag_matrix
+from cca.kron_pca import (cv_toeplitz, form_lag_matrix,
+                          toeplitz_reg_taper_shrink)
 
 def calc_cross_cov_mats_from_data(X, num_lags, regularization=None, reg_ops=None):
     """Compute a N-by-N cross-covariance matrix, where N is the data dimensionality,
@@ -28,7 +29,8 @@ def calc_cross_cov_mats_from_data(X, num_lags, regularization=None, reg_ops=None
 
     #mean center X
     X = X - X.mean(axis=0)
-    N = X.shape[1]
+    _, N = X.shape
+    T = num_lags
 
     if regularization is None:
         cross_cov_mats = np.zeros((num_lags, N, N))
@@ -38,13 +40,23 @@ def calc_cross_cov_mats_from_data(X, num_lags, regularization=None, reg_ops=None
         cov_est = calc_cov_from_cross_cov_mats(cross_cov_mats)
 
     elif regularization == 'kron':
-        if reg_ops is not None:
-            skip = reg_ops.get('skip', 1)
-            num_folds = reg_ops.get('num_folds', 5)
+        if reg_ops is None:
+            reg_ops = dict()
+        skip = reg_ops.get('skip', 1)
+        num_folds = reg_ops.get('num_folds', 5)
         X_with_lags = form_lag_matrix(X, num_lags, skip=skip)
         r_vals = np.arange(2*T - 1) + 1
         sigma_vals = np.linspace(1, 4*T + 1, 10)
-        _, r_opt, sigma_opt = cv_toeplitz(X_with_lags, N, num_lags, r_vals, sigma_vals, num_folds=num_folds)
+        alpha_vals = np.logspace(-2, -1, 10)
+        ll_vals, opt_idx = cv_toeplitz(X_with_lags, N, num_lags,
+                                          r_vals, sigma_vals, alpha_vals,
+                                          num_folds=num_folds)
+        ri, si, ai = opt_idx
+        cov = np.cov(X_with_lags, rowvar=False)
+        cov_est = toeplitz_reg_taper_shrink(cov, N, T,
+                                            r_vals[ri],
+                                            sigma_vals[si],
+                                            alpha_vals[ai])
         cross_cov_mats = calc_cross_cov_mats_from_cov(N, num_lags, cov_est)
 
     w = sp.linalg.eigvalsh(cov_est)

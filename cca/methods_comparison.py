@@ -1,7 +1,10 @@
+import warnings
+
 import numpy as np
 
 from scipy.optimize import minimize
 from sklearn.decomposition import FactorAnalysis as FA
+from sklearn.exceptions import ConvergenceWarning
 
 __all__ = ['GaussianProcessFactorAnalysis',
            'SlowFeatureAnalysis']
@@ -67,12 +70,15 @@ class GaussianProcessFactorAnalysis(object):
         Number of latent factors.
     var_n : float
         Independent noise for the factors.
+    tol : float
+        The EM iterations stop when
+        |L^k - L^{k+1}|/max{|L^k|,|L^{k+1}|,1} <= tol.
     max_iter : int
         Maximum number of EM steps.
     tau_init : float
         Scale for timescale initialization. Units are in sampling rate units.
     """
-    def __init__(self, n_factors, var_n=1e-3, max_iter=100,
+    def __init__(self, n_factors, var_n=1e-3, tol=1e-6, max_iter=100,
                  tau_init=10, seed=20190213, verbose=False):
         self.n_factors = n_factors
         self.var_n = var_n
@@ -106,12 +112,19 @@ class GaussianProcessFactorAnalysis(object):
         y_cov = big_C.dot(big_K).dot(big_C.T) + big_R
         big_d = np.tile(self.d_, T)
         big_y = y.ravel()
-        ll = log_likelihood(big_d, y_cov, big_y)
+        ll_pre = log_likelihood(big_d, y_cov, big_y)
         if self.verbose:
-            print("FA log likelihood:", ll)
+            print("FA log likelihood:", ll_pre)
 
+        converged = False
         for ii in range(self.max_iter):
             self._em_iter(y, big_K, big_C, big_R)
+            ll = log_likelihood(big_d, y_cov, big_y)
+            if abs(ll - ll_pre) / np.amax([ll, ll_pre, 1.]) <= self.tol:
+                converged = True
+                break
+        if not converged:
+            warnings.warn("max_iter reached.", ConvergenceWarning)
         return self
 
     def _em_iter(self, y, big_K, big_C, big_R):

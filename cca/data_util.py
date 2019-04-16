@@ -1,14 +1,13 @@
 import numpy as np
 import h5py
-from math import ceil
+from math import ceil, floor
 import pickle
 
 def sum_over_chunks(X, stride):
-    zero_padded = np.zeros((stride*ceil(X.shape[0]/stride), X.shape[1]))
-    zero_padded[:len(X), :] = X
-    reshaped = zero_padded.reshape((int(len(zero_padded)/stride), stride, X.shape[1]))
+    X_trunc = X[:len(X)-(len(X) % stride)]
+    reshaped = X_trunc.reshape((len(X_trunc)//stride, stride, X.shape[1]))
     summed = reshaped.sum(axis=1)
-    return summed[:-1]
+    return summed
 
 def get_active_channels(X, window_size, min_count):
 	good_idx = np.ones(X.shape[1], dtype=np.bool)

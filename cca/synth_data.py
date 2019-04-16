@@ -3,6 +3,7 @@ import scipy
 import h5py
 
 from cca.cov_util import calc_cov_from_cross_cov_mats, calc_cross_cov_mats_from_cov, calc_pi_from_cov
+from cca.data_util import sum_over_chunks
 
 def gen_gp_cov(T, N, kernel):
     """Generates a N*T-by-N*T covariance matrix for a spatiotemporal Gaussian
@@ -211,7 +212,7 @@ def gen_lorenz_system(T, integration_dt, data_dt):
     X = scipy.integrate.odeint(dx_dt, x_0, t)
 
     skip = int(np.round(data_dt / integration_dt))
-    X_downsampled = X[::skip, :]
+    X_downsampled = sum_over_chunks(X, skip) #X[::skip, :]
 
     return X_downsampled
 

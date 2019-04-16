@@ -181,7 +181,7 @@ class ComplexityComponentsAnalysis(object):
                 grad = v_flat_torch.grad
                 return loss.detach().cpu().numpy().astype(float), grad.detach().cpu().numpy().astype(float)
             opt = minimize(f_df, V_init.ravel(), method='L-BFGS-B', jac=True,
-                           options={'disp': self.verbose, 'ftol': 1e-10, 'gtol': 1e-10, 'maxfun': 10**10, 'maxiter': 10**10, 'maxls': 20},
+                           options={'disp': self.verbose, 'ftol': 1e-6, 'gtol': 1e-5, 'maxfun': 15000, 'maxiter': 15000, 'maxls': 20},
                            callback=callback)
             v = opt.x.reshape(N, d)
         else:

@@ -82,7 +82,7 @@ class ComplexityComponentsAnalysis(object):
         Method for initializing the projection matrix.
 
     """
-    def __init__(self, d=None, T=None, init="random", n_init=1, tol=1e-6,
+    def __init__(self, d=None, T=None, init="random_ortho", n_init=1, tol=1e-6,
                  ortho_lambda=10., verbose=False, use_scipy=True,
                  device="cpu", dtype=torch.float64):
         self.d = d
@@ -99,6 +99,7 @@ class ComplexityComponentsAnalysis(object):
 
     def estimate_cross_covariance(self, X, T=None, regularization=None, reg_ops=None):
         self.mean_ = X.mean(axis=0, keepdims=True)
+        X -= self.mean_
         if T is None:
             T = self.T
         else:

@@ -6,8 +6,121 @@ from scipy.optimize import minimize
 from sklearn.decomposition import FactorAnalysis as FA
 from sklearn.exceptions import ConvergenceWarning
 
+from .cca import ortho_reg_fn
+
 __all__ = ['GaussianProcessFactorAnalysis',
-           'SlowFeatureAnalysis']
+           'SlowFeatureAnalysis',
+           'knnComplexityComponentsAnalysis']
+
+class knnComplexityComponentsAnalysis(object):
+    """Complexity Components Analysis.
+
+    Runs CCA on multidimensional timeseries data X to discover a projection
+    onto a d-dimensional subspace which maximizes the complexity of the d-dimensional
+    dynamics.
+    Parameters
+    ----------
+    d: int
+        Number of basis vectors onto which the data X are projected.
+    T: int
+        Size of time windows accross which to compute mutual information.
+    init: string
+        Options: "random", "PCA"
+        Method for initializing the projection matrix.
+
+    """
+    def __init__(self, d=None, T=None, init="random", n_init=1, tol=1e-6,
+                 ortho_lambda=10., verbose=False, use_scipy=True):
+        self.d = d
+        self.T = T
+        self.init = init
+        self.n_init = n_init
+        self.tol = tol
+        self.ortho_lambda = ortho_lambda
+        self.verbose=verbose
+        self.device = device
+        self.dtype = dtype
+        self.use_scipy = use_scipy
+        self.coef_ = None
+
+    def fit(self, X, d=None, n_init=None):
+        self.mean_ = X.mean(axis=0, keepdims=True)
+        X -= self.mean_
+        if n_init is None:
+            n_init = self.n_init
+        pis = []
+        coefs = []
+        for ii in range(n_init):
+            coef, pi = self._fit_projection(X, d=d)
+            pis.append(pi)
+            coefs.append(coef)
+        idx = np.argmax(pis)
+        self.coef_ = coefs[idx]
+        return self
+
+    def _fit_projection(self, X, d=None):
+        if d is None:
+            d = self.d
+        if self.cross_covs is None:
+            raise ValueError('Call estimate_cross_covariance() first.')
+
+        N = X.shape[1]
+        if type(self.init) == str:
+            if self.init == "random":
+                V_init = np.random.normal(0, 1, (N, d))
+            elif self.init == "random_ortho":
+                V_init = scipy.stats.ortho_group.rvs(N)[:, :d]
+            elif self.init == "uniform":
+                V_init = np.ones((N, d)) / np.sqrt(N)
+                V_init = V_init + np.random.normal(0, 1e-3, V_init.shape)
+            else:
+                raise ValueError
+        else:
+            raise ValueError
+        V_init /= np.linalg.norm(V_init, axis=0, keepdims=True)
+
+        callback = None
+        if self.verbose:
+            def callback(v_flat):
+                v = v_flat.reshape(N, d)
+                X_lag = form_lag_matrix(X.dot(v), 2 * self.T)
+                mi = ksg.MutualInformation(X_lag[:, :self.T * d],
+                                           X_lag[:, self.T * d:])
+                pi = mi.mutual_information()
+                reg_val = ortho_reg_fn(v, self.ortho_lambda)
+                print("PI: {} bits, reg: {}".format(str(np.round(pi, 4)),
+                                                    str(np.round(reg_val, 4))))
+            callback(V_init)
+        def f(v_flat):
+            v = v_flat.reshape(N, d)
+            X_lag = form_lag_matrix(X.dot(v), 2 * T_pi)
+            mi = ksg.MutualInformation(X_lag[:, :T_pi], X_lag[:, T_pi:])
+            pi = mi.mutual_information()
+            reg_val = ortho_reg_fn(v, self.ortho_lambda)
+            loss = -pi + reg_val
+            return loss
+        opt = minimize(f, V_init.ravel(), method='L-BFGS-B', callback=callback)
+        v = opt.x.reshape(N, d)
+
+        # Orthonormalize the basis prior to returning it
+        V_opt = scipy.linalg.orth(v)
+        final_pi = calc_pi_from_cross_cov_mats(c, V_opt).detach().cpu().numpy()
+        return V_opt, final_pi
+
+    def transform(self, X):
+        return (X - self.mean_).dot(self.coef_)
+
+    def fit_transform(self, X, d=None, T=None, regularization=None,
+                      reg_ops=None):
+        self.fit(X, d=d, T=T, regularization=regularization, reg_ops=reg_ops)
+        return self.transform(X)
+
+    def score(self, X):
+        X_lag = form_lag_matrix(X.dot(self.coef_), 2 * T_pi)
+        mi = ksg.MutualInformation(X_lag[:, :T_pi], X_lag[:, T_pi:])
+        pi = mi.mutual_information()
+        return pi
+
 
 def calc_K(tau, delta_t, var_n):
     """Calculates the GP kernel autocovariance.
@@ -78,10 +191,11 @@ class GaussianProcessFactorAnalysis(object):
     tau_init : float
         Scale for timescale initialization. Units are in sampling rate units.
     """
-    def __init__(self, n_factors, var_n=1e-3, tol=1e-6, max_iter=100,
+    def __init__(self, n_factors, var_n=1e-3, tol=1e-8, max_iter=500,
                  tau_init=10, seed=20190213, verbose=False):
         self.n_factors = n_factors
         self.var_n = var_n
+        self.tol = tol
         self.max_iter = max_iter
         self.tau_init = tau_init
         self.verbose = verbose
@@ -118,13 +232,13 @@ class GaussianProcessFactorAnalysis(object):
 
         converged = False
         for ii in range(self.max_iter):
-            self._em_iter(y, big_K, big_C, big_R)
-            ll = log_likelihood(big_d, y_cov, big_y)
+            ll = self._em_iter(y, big_K, big_C, big_R)
             if abs(ll - ll_pre) / np.amax([ll, ll_pre, 1.]) <= self.tol:
                 converged = True
-                break
+                #break
+            ll_pre = ll
         if not converged:
-            warnings.warn("max_iter reached.", ConvergenceWarning)
+            warnings.warn("EM max_iter reached.", ConvergenceWarning)
         return self
 
     def _em_iter(self, y, big_K, big_C, big_R):
@@ -143,7 +257,7 @@ class GaussianProcessFactorAnalysis(object):
         cov = big_K - KCt_CKCtR_inv.dot(KCt.T)
         y_cov = big_C.dot(KCt) + big_R
 
-        if self.verbose:
+        if self.verbose == 2:
             #Compute log likelihood under current params
             ll = log_likelihood(big_d, y_cov, big_y)
             print("Pre update log likelihood:", ll)
@@ -161,27 +275,31 @@ class GaussianProcessFactorAnalysis(object):
         yx = y.T.dot(np.concatenate((x, np.ones((T, 1))), axis=1))
         Cd = np.linalg.solve(xxp, yx.T).T
         self.C_ = Cd[:, :-1]
-        if self.verbose:
+        if self.verbose == 2:
             #Compute log likelihood under current params
             ll = self._calc_loglikelihood(y)
             print("C_ update log likelihood:", ll)
         self.d_ = Cd[:, -1]
-        if self.verbose:
+        if self.verbose == 2:
             #Compute log likelihood under current params
             ll = self._calc_loglikelihood(y)
             print("d_ update log likelihood:", ll)
         dy = y - self.d_[np.newaxis]
         self.R_ = np.diag(np.diag(dy.T.dot(dy) - dy.T.dot(x).dot(self.C_.T))) / T
-        if self.verbose:
+        if self.verbose == 2:
             #Compute log likelihood under current params
             ll = self._calc_loglikelihood(y)
             print("Exact update log likelihood:", ll)
         self.tau_ = self._optimize_tau(self.tau_, T, big_xxp)
+        ll = self._calc_loglikelihood(y)
+        if self.verbose == 2:
+            #Compute log likelihood under current params
+            print("tau update log likelihood:", ll)
         if self.verbose:
             #Compute log likelihood under current params
-            ll = self._calc_loglikelihood(y)
-            print("tau update log likelihood:", ll)
+            print("EM update log likelihood:", ll)
             print()
+        return ll
 
     def _calc_loglikelihood(self, y):
         T, _ = y.shape
@@ -232,7 +350,7 @@ class GaussianProcessFactorAnalysis(object):
                 dEdKi = .5 *(-Ki_inv + Ki_inv.dot(xpx).dot(Ki_inv))
                 dKidti = var_f * (delta_t**2 / np.exp(lti)**3) * np.exp( - delta_t**2 / (2 * np.exp(lti)**2 ))
                 df[ii] = np.trace( np.dot(dEdKi.T, dKidti) ) * np.exp(lti)
-            if self.verbose:
+            if self.verbose == 2:
                 print('tau opt', f)
 
             return -f, -df

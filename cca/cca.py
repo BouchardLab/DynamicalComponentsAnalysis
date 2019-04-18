@@ -1,6 +1,7 @@
 import numpy as np
 import scipy.stats
 from scipy.optimize import minimize
+from scipy.signal.windows import hann
 import torch
 
 from .cov_util import (calc_cross_cov_mats_from_data,
@@ -225,25 +226,26 @@ class ComplexityComponentsAnalysis(object):
         return calc_pi_from_cross_cov_mats(self.cross_covs, self.coef_)
 
 
-def make_cepts(X, T_pi):
-    """Calculate the normalize power spectrum."""
+def make_cepts2(X, T_pi):
+    """Calculate the squared real cepstral coefficents."""
     Y = F.unfold(X, kernel_size=[T_pi, 1], stride=T_pi)
     Y = torch.transpose(Y, 1, 2)
-    Yf = torch.rfft(Y, 1, onesided=True)
+    window = torch.Tensor(hann(Y.shape[-1])[np.newaxis, np.newaxis])
+    Yf = torch.rfft(Y * window, 1, onesided=True)
     spect = Yf[:, :, :, 0]**2 + Yf[:, :, :, 1]**2
-    spect = torch.stack([torch.log(spect), torch.zeros_like(spect)], dim=3)
+    spect = torch.stack([torch.log(spect / Y.shape[-1]),
+                         torch.zeros_like(spect)], dim=-1)
     cepts = torch.irfft(spect, 1, onesided=True, signal_sizes=[Y.shape[2]])
-    return cepts
+    return cepts**2
 
 def pi_fft_loss_fn(X, T_pi):
     """Power spectrum entropy loss function."""
     Xp_tensor = X.t()
     Xp_tensor = torch.unsqueeze(Xp_tensor, -1)
     Xp_tensor = torch.unsqueeze(Xp_tensor, 1)
-    cepts = make_cepts(Xp_tensor, T_pi)
-    print(cepts.shape)
-    k = torch.arange(cepts.shape[2], dtype=cepts.dtype)
-    return (torch.unsqueeze(k, 0) * cepts**2).sum(dim=2).mean()
+    bs2 = make_cepts2(Xp_tensor, T_pi)
+    ks = torch.arange(bs2.shape[-1], dtype=bs2.dtype)
+    return (torch.unsqueeze(ks, 0) * bs2).sum(dim=1).sum()
 
 
 class DynamicalComponentsAnalysisFFT(object):

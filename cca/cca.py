@@ -181,7 +181,7 @@ class ComplexityComponentsAnalysis(object):
                 grad = v_flat_torch.grad
                 return loss.detach().cpu().numpy().astype(float), grad.detach().cpu().numpy().astype(float)
             opt = minimize(f_df, V_init.ravel(), method='L-BFGS-B', jac=True,
-                           options={'disp': self.verbose, 'ftol': 1e-6, 'gtol': 1e-5, 'maxfun': 15000, 'maxiter': 15000, 'maxls': 20},
+                           options={'disp': self.verbose, 'ftol': self.tol, 'gtol': 1e-5, 'maxfun': 15000, 'maxiter': 15000, 'maxls': 20},
                            callback=callback)
             v = opt.x.reshape(N, d)
         else:
@@ -215,6 +215,153 @@ class ComplexityComponentsAnalysis(object):
 
     def transform(self, X):
         return (X - self.mean_).dot(self.coef_)
+
+    def fit_transform(self, X, d=None, T=None, regularization=None,
+                      reg_ops=None):
+        self.fit(X, d=d, T=T, regularization=regularization, reg_ops=reg_ops)
+        return self.transform(X)
+
+    def score(self):
+        return calc_pi_from_cross_cov_mats(self.cross_covs, self.coef_)
+
+
+def make_cepts(X, T_pi):
+    """Calculate the normalize power spectrum."""
+    Y = F.unfold(X, kernel_size=[T_pi, 1], stride=T_pi)
+    Y = torch.transpose(Y, 1, 2)
+    Yf = torch.rfft(Y, 1, onesided=True)
+    spect = Yf[:, :, :, 0]**2 + Yf[:, :, :, 1]**2
+    spect = torch.stack([torch.log(spect), torch.zeros_like(spect)], dim=3)
+    cepts = torch.irfft(spect, 1, onesided=True, signal_sizes=[Y.shape[2]])
+    return cepts
+
+def pi_fft_loss_fn(X, T_pi):
+    """Power spectrum entropy loss function."""
+    Xp_tensor = X.t()
+    Xp_tensor = torch.unsqueeze(Xp_tensor, -1)
+    Xp_tensor = torch.unsqueeze(Xp_tensor, 1)
+    cepts = make_cepts(Xp_tensor, T_pi)
+    print(cepts.shape)
+    k = torch.arange(cepts.shape[2], dtype=cepts.dtype)
+    return (torch.unsqueeze(k, 0) * cepts**2).sum(dim=2).mean()
+
+
+class DynamicalComponentsAnalysisFFT(object):
+    """Dynamical Components Analysis.
+
+    Runs FCA on multidimensional timeseries data X to discover a projection
+    onto a d-dimensional subspace which maximizes the entropy of the power spectrum.
+    Parameters
+    ----------
+    d: int
+        Number of basis vectors onto which the data X are projected.
+    T: int
+        Size of time windows accross which to compute mutual information.
+    init: string
+        Options: "random", "PCA"
+        Method for initializing the projection matrix.
+
+    """
+    def __init__(self, d=None, T=None, init="random_ortho", n_init=1, tol=1e-6,
+                 ortho_lambda=10., verbose=False,
+                 device="cpu", dtype=torch.float64):
+        self.d = d
+        self.T = T
+        self.init = init
+        self.n_init = n_init
+        self.tol = tol
+        self.ortho_lambda = ortho_lambda
+        self.verbose=verbose
+        self.device = device
+        self.dtype = dtype
+        self.cross_covs = None
+
+    def fit(self, X, d=None, n_init=None):
+        self.pca = PCA()
+        X = self.pca.fit_transform(X)
+        if n_init is None:
+            n_init = self.n_init
+        pis = []
+        coefs = []
+        for ii in range(n_init):
+            coef, pi = self._fit_projection(X, d=d)
+            pis.append(pi)
+            coefs.append(coef)
+        idx = np.argmax(pis)
+        self.coef_ = coefs[idx]
+
+    def _fit_projection(self, X, d=None):
+        if d is None:
+            d = self.d
+
+        N = X.shape[1]
+        if type(self.init) == str:
+            if self.init == "random":
+                V_init = np.random.normal(0, 1, (N, d))
+            elif self.init == "random_ortho":
+                V_init = scipy.stats.ortho_group.rvs(N)[:, :d]
+            elif self.init == "uniform":
+                V_init = np.ones((N, d)) / np.sqrt(N)
+                V_init = V_init + np.random.normal(0, 1e-3, V_init.shape)
+            else:
+                raise ValueError
+        else:
+            raise ValueError
+        V_init /= np.linalg.norm(V_init, axis=0, keepdims=True)
+
+        v = torch.tensor(V_init, requires_grad=True,
+                         device=self.device, dtype=self.dtype)
+
+        Xt = X
+        if not isinstance(Xt, torch.Tensor):
+        	Xt = torch.tensor(Xt, device=self.device, dtype=self.dtype)
+
+        if self.verbose:
+            def callback(v_flat):
+                v_flat_torch = torch.tensor(v_flat,
+                                            requires_grad=True,
+                                            device=self.device,
+                                            dtype=self.dtype)
+                v_torch = v_flat_torch.reshape(N, d)
+                ent = ent_loss_fn(Xt, v_torch, self.T)
+                reg_val = ortho_reg_fn(v_torch, self.ortho_lambda)
+                ent = ent.detach().cpu().numpy()
+                reg_val = reg_val.detach().cpu().numpy()
+                print("Ent: {} bits, reg: {}".format(str(np.round(ent, 4)),
+                                                    str(np.round(reg_val, 4))))
+            callback(V_init)
+        else:
+            callback = None
+        def f_df(v_flat):
+            v_flat_torch = torch.tensor(v_flat,
+                                        requires_grad=True,
+                                        device=self.device,
+                                        dtype=self.dtype)
+            v_torch = v_flat_torch.reshape(N, d)
+            ent = ent_loss_fn(Xt, v_torch, self.T)
+            reg_val = ortho_reg_fn(v_torch, self.ortho_lambda)
+            loss = ent + reg_val
+            loss.backward()
+            grad = v_flat_torch.grad
+            return loss.detach().cpu().numpy().astype(float), grad.detach().cpu().numpy().astype(float)
+        opt = minimize(f_df, V_init.ravel(), method='L-BFGS-B', jac=True,
+                       options={'disp': self.verbose, 'ftol': 1e-6, 'gtol': 1e-5, 'maxfun': 15000, 'maxiter': 15000, 'maxls': 20},
+                       callback=callback)
+        v = opt.x.reshape(N, d)
+
+        # Orthonormalize the basis prior to returning it
+        V_opt = scipy.linalg.orth(v)
+        v_flat_torch = torch.tensor(V_opt.ravel(),
+                                    requires_grad=True,
+                                    device=self.device,
+                                    dtype=self.dtype)
+        v_torch = v_flat_torch.reshape(N, d)
+        final_pi = ent_loss_fn(Xt, v_torch, self.T).detach().cpu().numpy()
+        return V_opt, final_pi
+
+    def transform(self, X):
+        X = self.pca.transform(X)
+        return X.dot(self.coef_)
 
     def fit_transform(self, X, d=None, T=None, regularization=None,
                       reg_ops=None):

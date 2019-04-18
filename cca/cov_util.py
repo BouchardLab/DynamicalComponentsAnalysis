@@ -3,7 +3,8 @@ import scipy as sp
 import torch
 
 from cca.kron_pca import (cv_toeplitz, form_lag_matrix,
-                          toeplitz_reg_taper_shrink)
+                          toeplitz_reg_taper_shrink,
+                          toeplitzify)
 
 def calc_cross_cov_mats_from_data(X, num_lags, regularization=None, reg_ops=None):
     """Compute a N-by-N cross-covariance matrix, where N is the data dimensionality,
@@ -38,6 +39,8 @@ def calc_cross_cov_mats_from_data(X, num_lags, regularization=None, reg_ops=None
             cross_cov = np.dot(X[delta_t:].T, X[:len(X)-delta_t])/(len(X) - delta_t)
             cross_cov_mats[delta_t] = cross_cov
         cov_est = calc_cov_from_cross_cov_mats(cross_cov_mats)
+        #cov_est = toeplitzify(cov_est, N, T)
+        cross_cov_mat = calc_cross_cov_mats_from_cov(N, T, cov_est)
 
     elif regularization == 'kron':
         if reg_ops is None:

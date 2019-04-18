@@ -56,7 +56,7 @@ def calc_pi_for_gp(T, N, kernel):
     cov_T = cov_2T[:N*T, :N*T]
     sgn_T, logdet_T = np.linalg.slogdet(cov_T)
     sgn_2T, logdet_2T = np.linalg.slogdet(cov_2T)
-    PI = (2*logdet_T - logdet_2T)/np.log(2)
+    PI = logdet_T - 0.5*logdet_2T
 
     return PI
 

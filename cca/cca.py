@@ -2,7 +2,9 @@ import numpy as np
 import scipy.stats
 from scipy.optimize import minimize
 from scipy.signal.windows import hann
+
 import torch
+import torch.nn.functional as F
 
 from .cov_util import (calc_cross_cov_mats_from_data,
                        calc_pi_from_cross_cov_mats)
@@ -233,13 +235,17 @@ def make_cepts2(X, T_pi):
     window = torch.Tensor(hann(Y.shape[-1])[np.newaxis, np.newaxis])
     Yf = torch.rfft(Y * window, 1, onesided=True)
     spect = Yf[:, :, :, 0]**2 + Yf[:, :, :, 1]**2
-    spect = torch.stack([torch.log(spect / Y.shape[-1]),
+    spect = torch.max(spect, torch.Tensor([1e-6]))
+    logspect = torch.log(spect) - np.log(float(Y.shape[-1]))
+    spect = torch.stack([logspect,
                          torch.zeros_like(spect)], dim=-1)
-    cepts = torch.irfft(spect, 1, onesided=True, signal_sizes=[Y.shape[2]])
+    cepts = torch.irfft(spect, 1, onesided=True, signal_sizes=[Y.shape[2]]) / float(Y.shape[-1])
     return cepts**2
 
 def pi_fft_loss_fn(X, T_pi):
     """Power spectrum entropy loss function."""
+    if not isinstance(X, torch.Tensor):
+        X = torch.Tensor(X)
     Xp_tensor = X.t()
     Xp_tensor = torch.unsqueeze(Xp_tensor, -1)
     Xp_tensor = torch.unsqueeze(Xp_tensor, 1)

@@ -6,16 +6,16 @@ from cca.kron_pca import (cv_toeplitz, form_lag_matrix,
                           toeplitz_reg_taper_shrink,
                           toeplitzify)
 
-def calc_cross_cov_mats_from_data(X, num_lags, regularization=None, reg_ops=None):
+def calc_cross_cov_mats_from_data(X, T, regularization=None, reg_ops=None):
     """Compute a N-by-N cross-covariance matrix, where N is the data dimensionality,
-    for each time lag up to num_lags-1.
+    for each time lag up to T-1.
 
     Parameters
     ----------
     X : np.ndarray, shape (# time-steps, N)
         The N-dimensional time series data from which the cross-covariance
         matrices are computed.
-    num_lags: int
+    T: int
         The number of time lags.
     regularization : string
         Regularization method for computing the spatiotemporal covariance matrix.
@@ -23,7 +23,7 @@ def calc_cross_cov_mats_from_data(X, num_lags, regularization=None, reg_ops=None
         Paramters for regularization.
     Returns
     -------
-    cross_cov_mats : np.ndarray, shape (num_lags, N, N), float
+    cross_cov_mats : np.ndarray, shape (T, N, N), float
         Cross-covariance matrices. cross_cov_mats[dt] is the cross-covariance between
         X(t) and X(t+dt), where X(t) is an N-dimensional vector.
     """
@@ -31,27 +31,21 @@ def calc_cross_cov_mats_from_data(X, num_lags, regularization=None, reg_ops=None
     #mean center X
     X = X - X.mean(axis=0)
     _, N = X.shape
-    T = num_lags
+
+    if reg_ops is None:
+        reg_ops = dict()
+    skip = reg_ops.get('skip', 1)
+    X_with_lags = form_lag_matrix(X, T, skip=skip)
 
     if regularization is None:
-        cross_cov_mats = np.zeros((num_lags, N, N))
-        for delta_t in range(num_lags):
-            cross_cov = np.dot(X[delta_t:].T, X[:len(X)-delta_t])/(len(X) - delta_t)
-            cross_cov_mats[delta_t] = cross_cov
-        cov_est = calc_cov_from_cross_cov_mats(cross_cov_mats)
-        #cov_est = toeplitzify(cov_est, N, T)
-        cross_cov_mat = calc_cross_cov_mats_from_cov(N, T, cov_est)
-
+        cov_est = np.cov(X_with_lags, rowvar=False)
+        cov_est = toeplitzify(cov_est, T, N)
     elif regularization == 'kron':
-        if reg_ops is None:
-            reg_ops = dict()
-        skip = reg_ops.get('skip', 1)
         num_folds = reg_ops.get('num_folds', 5)
-        X_with_lags = form_lag_matrix(X, num_lags, skip=skip)
-        r_vals = np.arange(2*T - 1) + 1
-        sigma_vals = np.linspace(1, 4*T + 1, 10)
-        alpha_vals = np.logspace(-2, -1, 10)
-        ll_vals, opt_idx = cv_toeplitz(X_with_lags, N, num_lags,
+        r_vals = np.arange(1, min(2*T, N**2 + 1))
+        sigma_vals = np.concatenate([np.linspace(1, 4*T + 1, 10), [100. * T]])
+        alpha_vals = np.concatenate([[0.], np.logspace(-2, -1, 10)])
+        ll_vals, opt_idx = cv_toeplitz(X_with_lags, N, T,
                                           r_vals, sigma_vals, alpha_vals,
                                           num_folds=num_folds)
         ri, si, ai = opt_idx
@@ -60,51 +54,54 @@ def calc_cross_cov_mats_from_data(X, num_lags, regularization=None, reg_ops=None
                                             r_vals[ri],
                                             sigma_vals[si],
                                             alpha_vals[ai])
-        cross_cov_mats = calc_cross_cov_mats_from_cov(N, num_lags, cov_est)
+    else:
+        raise ValueError
+    cross_cov_mats = calc_cross_cov_mats_from_cov(cov_est, T, N)
 
     w = sp.linalg.eigvalsh(cov_est)
     min_eig = np.min(w)
     if min_eig <= 0:
-        print("Warning: spatiotemporal covariance matrix not PSD (min eig = " + str(min_eig) + ")")
+        print("Warning: spatiotemporal covariance matrix was not PSD (min eig = " + str(min_eig) + ")")
+        cross_cov_mats[0] += np.eye(N) * (1e-6 - min_eig)
 
     return cross_cov_mats
 
 
-def calc_cross_cov_mats_from_cov(N, num_lags, cov):
-    """Calculates num_lags N-by-N cross-covariance matrices given
-    a N*num_lags-by-N*num_lags spatiotemporal covariance matrix by
+def calc_cross_cov_mats_from_cov(cov, T, N):
+    """Calculates T N-by-N cross-covariance matrices given
+    a N*T-by-N*T spatiotemporal covariance matrix by
     averaging over off-diagonal cross-covariance blocks with
     constant |t1-t2|.
     Parameters
     ----------
     N : int
         Numbner of spatial dimensions.
-    num_lags: int
+    T: int
         Number of time-lags.
-    cov : np.ndarray, shape (N*num_lags, N*num_lags)
+    cov : np.ndarray, shape (N*T, N*T)
         Spatiotemporal covariance matrix.
     Returns
     -------
-    cross_cov_mats : np.ndarray, shape (num_lags, N, N)
+    cross_cov_mats : np.ndarray, shape (T, N, N)
         Cross-covariance matrices.
     """
 
     use_torch = isinstance(cov, torch.Tensor)
 
     if use_torch:
-        cross_cov_mats = torch.zeros((num_lags, N, N))
+        cross_cov_mats = torch.zeros((T, N, N))
     else:
-        cross_cov_mats = np.zeros((num_lags, N, N))
+        cross_cov_mats = np.zeros((T, N, N))
 
-    for delta_t in range(num_lags):
+    for delta_t in range(T):
         if use_torch:
-            to_avg_lower = torch.zeros((num_lags-delta_t, N, N))
-            to_avg_upper = torch.zeros((num_lags-delta_t, N, N))
+            to_avg_lower = torch.zeros((T-delta_t, N, N))
+            to_avg_upper = torch.zeros((T-delta_t, N, N))
         else:
-            to_avg_lower = np.zeros((num_lags-delta_t, N, N))
-            to_avg_upper = np.zeros((num_lags-delta_t, N, N))
+            to_avg_lower = np.zeros((T-delta_t, N, N))
+            to_avg_upper = np.zeros((T-delta_t, N, N))
 
-        for i in range(num_lags-delta_t):
+        for i in range(T-delta_t):
             i_offset = delta_t*N
             to_avg_lower[i, :, :] = cov[i_offset+i*N:i_offset+(i+1)*N, i*N:(i+1)*N]
             to_avg_upper[i, :, :] = cov[i*N:(i+1)*N, i_offset+i*N:i_offset+(i+1)*N]
@@ -117,27 +114,27 @@ def calc_cross_cov_mats_from_cov(N, num_lags, cov):
     return cross_cov_mats
 
 def calc_cov_from_cross_cov_mats(cross_cov_mats):
-    """Calculates the N*num_lags-by-N*num_lags spatiotemporal covariance matrix
-    based on num_lags N-by-N cross-covariance matrices.
+    """Calculates the N*T-by-N*T spatiotemporal covariance matrix
+    based on T N-by-N cross-covariance matrices.
     Parameters
     ----------
-    cross_cov_mats : np.ndarray, shape (num_lags, N, N)
+    cross_cov_mats : np.ndarray, shape (T, N, N)
         Cross-covariance matrices: cross_cov_mats[dt] is the
         cross-covariance between X(t) and X(t+dt), where each
         of X(t) and X(t+dt) is a N-dimensional vector.
     Returns
     -------
-    cov : np.ndarray, shape (N*num_lags, N*num_lags)
+    cov : np.ndarray, shape (N*T, N*T)
         Big covariance matrix, stationary in time by construction.
     """
 
     N = cross_cov_mats.shape[1]
-    num_lags = len(cross_cov_mats)
+    T = len(cross_cov_mats)
     use_torch = isinstance(cross_cov_mats, torch.Tensor)
 
     cross_cov_mats_repeated = []
-    for i in range(num_lags):
-        for j in range(num_lags):
+    for i in range(T):
+        for j in range(T):
             if i > j:
                 cross_cov_mats_repeated.append(cross_cov_mats[abs(i-j)])
             else:
@@ -147,22 +144,22 @@ def calc_cov_from_cross_cov_mats(cross_cov_mats):
                     cross_cov_mats_repeated.append(cross_cov_mats[abs(i-j)].T)
 
     if use_torch:
-        cov_tensor = torch.reshape(torch.stack(cross_cov_mats_repeated), (num_lags, num_lags, N, N))
+        cov_tensor = torch.reshape(torch.stack(cross_cov_mats_repeated), (T, T, N, N))
         cov = torch.cat([torch.cat([cov_ii_jj for cov_ii_jj in cov_ii], dim=1) for cov_ii in cov_tensor])
     else:
-        cov_tensor = np.reshape(np.stack(cross_cov_mats_repeated), (num_lags, num_lags, N, N))
+        cov_tensor = np.reshape(np.stack(cross_cov_mats_repeated), (T, T, N, N))
         cov = np.concatenate([np.concatenate([cov_ii_jj for cov_ii_jj in cov_ii], axis=1) for cov_ii in cov_tensor])
 
     return cov
 
 
-def calc_pi_from_cov(cov_2T):
+def calc_pi_from_cov(cov_2T_pi):
     """Calculates the mutual information ("predictive information"
-    or "PI") between variables  {1,...,T} and {T+1,...,2*T}, which
-    are jointly Gaussian with covariance matrix cov_2T.
+    or "PI") between variables  {1,...,T_pi} and {T_pi+1,...,2*T_pi}, which
+    are jointly Gaussian with covariance matrix cov_2T_pi.
     Parameters
     ----------
-    cov_2T : np.ndarray, shape (2*T, 2*T)
+    cov_2T_pi : np.ndarray, shape (2*T_pi, 2*T_pi)
         Covariance matrix.
     Returns
     -------
@@ -170,18 +167,18 @@ def calc_pi_from_cov(cov_2T):
         Mutual information in bits.
     """
 
-    half = int(cov_2T.shape[0]/2)
-    use_torch = isinstance(cov_2T, torch.Tensor)
+    T_pi = cov_2T_pi.shape[0] // 2
+    use_torch = isinstance(cov_2T_pi, torch.Tensor)
 
-    cov_T = cov_2T[:half, :half]
+    cov_T_pi = cov_2T_pi[:T_pi, :T_pi]
     if use_torch:
-        logdet_T = torch.slogdet(cov_T)[1]
-        logdet_2T = torch.slogdet(cov_2T)[1]
+        logdet_T_pi = torch.slogdet(cov_T_pi)[1]
+        logdet_2T_pi = torch.slogdet(cov_2T_pi)[1]
     else:
-        logdet_T = np.linalg.slogdet(cov_T)[1]
-        logdet_2T = np.linalg.slogdet(cov_2T)[1]
+        logdet_T_pi = np.linalg.slogdet(cov_T_pi)[1]
+        logdet_2T_pi = np.linalg.slogdet(cov_2T_pi)[1]
 
-    PI = (2. * logdet_T - logdet_2T) / np.log(2.)
+    PI = logdet_T_pi - .5 * logdet_2T_pi
     return PI
 
 
@@ -189,7 +186,7 @@ def project_cross_cov_mats(cross_cov_mats, proj):
     """Projects the cross covariance matrices.
     Parameters
     ----------
-    cross_cov_mats : np.ndarray, shape (num_lags, N, N)
+    cross_cov_mats : np.ndarray, shape (T, N, N)
         Cross-covariance matrices: cross_cov_mats[dt] is the
         cross-covariance between X(t) and X(t+dt), where each
         of X(t) and X(t+dt) is a N-dimensional vector.
@@ -199,7 +196,7 @@ def project_cross_cov_mats(cross_cov_mats, proj):
         computed for this d-dimensional timeseries.
     Returns
     -------
-    cross_cov_mats_proj : ndarray, shape (num_lags, d, d)
+    cross_cov_mats_proj : ndarray, shape (T, d, d)
         Mutual information in bits.
     """
     if isinstance(cross_cov_mats, torch.Tensor):
@@ -231,10 +228,10 @@ def project_cross_cov_mats(cross_cov_mats, proj):
 
 def calc_pi_from_cross_cov_mats(cross_cov_mats, proj=None):
     """Calculates predictive information for a spatiotemporal Gaussian
-    process with num_lags-1 N-by-N cross-covariance matrices.
+    process with T-1 N-by-N cross-covariance matrices.
     Parameters
     ----------
-    cross_cov_mats : np.ndarray, shape (num_lags, N, N)
+    cross_cov_mats : np.ndarray, shape (T, N, N)
         Cross-covariance matrices: cross_cov_mats[dt] is the
         cross-covariance between X(t) and X(t+dt), where each
         of X(t) and X(t+dt) is a N-dimensional vector.

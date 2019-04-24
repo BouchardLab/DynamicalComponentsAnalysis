@@ -128,6 +128,8 @@ class ComplexityComponentsAnalysis(object):
     def _fit_projection(self, d=None):
         if d is None:
             d = self.d
+        if d < 1:
+            raise ValueError
         if self.cross_covs is None:
             raise ValueError('Call estimate_cross_covariance() first.')
 
@@ -213,7 +215,7 @@ class ComplexityComponentsAnalysis(object):
     def fit(self, X, d=None, T=None, regularization=None, reg_ops=None):
         self.estimate_cross_covariance(X, T=T, regularization=regularization,
                                        reg_ops=reg_ops)
-        self.fit_projection(d)
+        self.fit_projection(d=d)
         return self
 
     def transform(self, X):

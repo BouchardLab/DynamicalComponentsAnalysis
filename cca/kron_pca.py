@@ -6,6 +6,8 @@ from sklearn.utils.extmath import randomized_svd
 import matplotlib.pyplot as plt
 from math import floor
 
+from .cov_util import rectify_spectrum
+
 class memoized(object):
    """Decorator for memoization.
    From: https://wiki.python.org/moin/PythonDecoratorLibrary.
@@ -66,90 +68,27 @@ def build_P(T):
         P[offset+T-1, diag_idx-1] = 1/np.sqrt(T - np.abs(offset))
     return P
 
-def toeplitzify(C, T, N, symmetrize=True):
-    C_toep = np.zeros((T*N, T*N))
-    for delta_t in range(T):
-        to_avg_lower = np.zeros((T-delta_t, N, N))
-        to_avg_upper = np.zeros((T-delta_t, N, N))
-
-        for i in range(T - delta_t):
-            to_avg_lower[i] += C[(delta_t + i)*N : (delta_t + i + 1)*N, i*N : (i + 1)*N]
-            to_avg_upper[i] += C[i*N : (i + 1)*N, (delta_t + i)*N : (delta_t + i + 1)*N]
-
-        avg_lower = np.mean(to_avg_lower, axis=0)
-        avg_upper = np.mean(to_avg_upper, axis=0)
-
-        if symmetrize:
-            avg_lower = 0.5*(avg_lower + avg_upper.T)
-            avg_upper = 0.5*(avg_lower.T + avg_upper)
-
-        for i in range(T-delta_t):
-            C_toep[(delta_t + i)*N : (delta_t + i + 1)*N, i*N : (i + 1)*N] = avg_lower
-            C_toep[i*N : (i + 1)*N, (delta_t + i)*N : (delta_t + i + 1)*N] = avg_upper
-
-    return C_toep
-
-def form_lag_matrix(X, T, stride=1):
-    N = X.shape[1]
-    num_lagged_samples = floor((len(X) - T)/stride) + 1 #number of lagged samples
-    X_with_lags = np.zeros((num_lagged_samples, T*N))
-    for i in range(num_lagged_samples):
-        X_with_lags[i, :] = X[i*stride : i*stride + T, :].flatten()
-    return X_with_lags
-
-def calc_cov_local_mean(X, bin_size, stride=1):
-    num_windows = floor((len(X) - bin_size) / stride)
-    N = X.shape[1]
-    cov_sum = np.zeros((N, N))
-    for i in range(num_windows):
-        X_window = np.copy(X[i*stride : bin_size + i*stride])
-        X_window -= X_window.mean(axis=0)
-        cov_sum += np.dot(X_window.T, X_window)/len(X_window)
-    return cov_sum / num_windows
-
-def toeplitz_reg(cov, N, T, r):
-	R_C = pv_rearrange(cov, N, T)
-	P = build_P(T)
-	to_svd = P.dot(R_C)
-	U, s, Vt = randomized_svd(to_svd, n_components=r, n_iter=40, random_state=42)
-	trunc_svd = U.dot(np.diag(s)).dot(Vt)
-	cov_reg = pv_rearrange_inv(P.T.dot(trunc_svd), N, T)
-
-	return cov_reg
-
-def toeplitz_reg_and_taper(cov, N, T, r, sigma):
-    cov_reg = toeplitz_reg_threshold(cov, N, T, r)
-    cov_reg_taper = taper_cov(cov_reg, N, T, sigma)
-    return cov_reg_taper
-
-def toeplitz_reg_taper_shrink(cov, N, T, r, sigma, alpha):
-    cov_reg = toeplitz_reg_threshold(cov, N, T, r)
-    cov_reg_taper = taper_cov(cov_reg, N, T, sigma)
-    cov_reg_taper_shrink = (1. - alpha)*cov_reg_taper + alpha*np.eye(N*T)
-    return cov_reg_taper_shrink
-
-def non_toeplitz_reg(cov, N, T, r):
-	R_C = pv_rearrange(cov, N, T)
-	U, s, Vt = randomized_svd(R_C, n_components=r, n_iter=40, random_state=42)
-	trunc_svd = U.dot(np.diag(s)).dot(Vt)
-	cov_reg = pv_rearrange_inv(trunc_svd, N, T)
-	return cov_reg
-
-def toeplitz_reg_threshold(cov, N, T, r):
-    R_C = pv_rearrange(cov, N, T)
+def toeplitz_reg(cov, T, N, r):
+    R_C = pv_rearrange(cov, T, N)
     P = build_P(T)
     to_svd = P.dot(R_C)
     U, s, Vt = randomized_svd(to_svd, n_components=r+1, n_iter=40, random_state=42)
     trunc_svd = U[:, :-1].dot(np.diag(s[:-1] - s[-1])).dot(Vt[:-1, :])
-    cov_reg = pv_rearrange_inv(P.T.dot(trunc_svd), N, T)
+    cov_reg = pv_rearrange_inv(P.T.dot(trunc_svd), T, N)
     return cov_reg
 
-def non_toeplitz_reg_threshold(cov, N, T, r):
-    R_C = pv_rearrange(cov, N, T)
+def non_toeplitz_reg(cov, T, N, r):
+    R_C = pv_rearrange(cov, T, N)
     U, s, Vt = randomized_svd(R_C, n_components=r+1, n_iter=40, random_state=42)
     trunc_svd = U[:, :-1].dot(np.diag(s[:-1] - s[-1])).dot(Vt[:-1, :])
-    cov_reg = pv_rearrange_inv(trunc_svd, N, T)
+    cov_reg = pv_rearrange_inv(trunc_svd, T, N)
     return cov_reg
+
+def toeplitz_reg_taper_shrink(cov, T, N, r, sigma, alpha):
+    cov_reg = toeplitz_reg(cov, T, N, r)
+    cov_reg_taper = taper_cov(cov_reg, T, N, sigma)
+    cov_reg_taper_shrink = (1. - alpha)*cov_reg_taper + alpha*np.eye(T*N)
+    return cov_reg_taper_shrink
 
 def gaussian_log_likelihood(cov, sample_cov, num_samples):
     to_trace = np.linalg.solve(cov, sample_cov)
@@ -158,7 +97,7 @@ def gaussian_log_likelihood(cov, sample_cov, num_samples):
     log_likelihood = -0.5*num_samples*(d*np.log(2*np.pi) + log_det_cov + np.trace(to_trace))
     return log_likelihood
 
-def taper_cov(cov, N, T, sigma):
+def taper_cov(cov, T, N, sigma):
     t = np.arange(T).reshape((T, 1))
     delta_t = t - t.T
     temporal_kernel = np.exp(-(delta_t / sigma)**2)
@@ -166,9 +105,9 @@ def taper_cov(cov, N, T, sigma):
     result = full_kernel * cov
     return result
 
-def cv_toeplitz(X_with_lags, N, T, r_vals, sigma_vals, alpha_vals, num_folds=10, verbose=False):
+def cv_toeplitz(X_with_lags, T, N, r_vals, sigma_vals, alpha_vals, num_folds=10, verbose=False):
     fold_size = int(np.floor(len(X_with_lags)/num_folds))
-    d = N*T
+    d = T*N
     P = build_P(T)
     ll_vals = np.zeros((num_folds, len(r_vals), len(sigma_vals), len(alpha_vals)))
 
@@ -179,19 +118,14 @@ def cv_toeplitz(X_with_lags, N, T, r_vals, sigma_vals, alpha_vals, num_folds=10,
         X_train = np.concatenate((X_with_lags[:cv_iter*fold_size], X_with_lags[(cv_iter+1)*fold_size:]), axis=0)
         X_test = X_with_lags[cv_iter*fold_size : (cv_iter+1)*fold_size]
         num_samples = len(X_test)
-
         cov_train, cov_test = np.cov(X_train.T), np.cov(X_test.T)
-        min_eig_train = np.min(scipy.linalg.eigvalsh(cov_train))
-        min_eig_test = np.min(scipy.linalg.eigvalsh(cov_test))
-        if min_eig_train < 0:
-            cov_train += (-cov_train + 1e-4)*np.eye(cov_train.shape[0])
-        if min_eig_test < 0:
-            cov_test += (-cov_test + 1e-4)*np.eye(cov_test.shape[0])
-            
-        R_C = pv_rearrange(cov_train, N, T)
+        cov_train, cov_test = toeplitzify(cov_train, T, N), toeplitzify(cov_test, T, N)
+        rectify_spectrum(cov_train)
+        rectify_spectrum(cov_test)
+
+        R_C = pv_rearrange(cov_train, T, N)
         to_svd = P.dot(R_C)
         U, s, Vt = randomized_svd(to_svd, n_components=np.max(r_vals), n_iter=40, random_state=42)
-        diag_part = cov_train[:N, :N]
 
         for r_idx in range(len(r_vals)):
             r = r_vals[r_idx]
@@ -201,13 +135,13 @@ def cv_toeplitz(X_with_lags, N, T, r_vals, sigma_vals, alpha_vals, num_folds=10,
                 trunc_svd = to_svd
             else:
                 trunc_svd = U[:, :r].dot(np.diag(s[:r] - s[r])).dot(Vt[:r, :])
-            cov_kron = pv_rearrange_inv(P.T.dot(trunc_svd), N, T)
+            cov_kron = pv_rearrange_inv(P.T.dot(trunc_svd), T, N)
             for sigma_idx in range(len(sigma_vals)):
                 sigma = sigma_vals[sigma_idx]
-                cov_kron_tapered = taper_cov(cov_kron, N, T, sigma)
+                cov_kron_tapered = taper_cov(cov_kron, T, N, sigma)
                 for alpha_idx in range(len(alpha_vals)):
                     alpha = alpha_vals[alpha_idx]
-                    cov_kron_tapered_shrunk = (1. - alpha)*cov_kron_tapered + alpha*np.eye(N*T)
+                    cov_kron_tapered_shrunk = (1. - alpha)*cov_kron_tapered + alpha*np.eye(T*N)
                     ll = gaussian_log_likelihood(cov_kron_tapered_shrunk, cov_test, num_samples)
                     ll_vals[cv_iter, r_idx, sigma_idx, alpha_idx] = ll
 

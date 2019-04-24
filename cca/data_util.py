@@ -3,6 +3,14 @@ import h5py
 from math import ceil, floor
 import pickle
 
+def form_lag_matrix(X, T, stride=1):
+    N = X.shape[1]
+    num_lagged_samples = floor((len(X) - T)/stride) + 1 #number of lagged samples
+    X_with_lags = np.zeros((num_lagged_samples, T*N))
+    for i in range(num_lagged_samples):
+        X_with_lags[i, :] = X[i*stride : i*stride + T, :].flatten()
+    return X_with_lags
+
 def sum_over_chunks(X, stride):
     X_trunc = X[:len(X)-(len(X) % stride)]
     reshaped = X_trunc.reshape((len(X_trunc)//stride, stride, X.shape[1]))

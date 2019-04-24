@@ -5,8 +5,8 @@ import h5py
 from cca.cov_util import calc_cov_from_cross_cov_mats, calc_cross_cov_mats_from_cov, calc_pi_from_cov
 from cca.data_util import sum_over_chunks
 
-def gen_gp_cov(T, N, kernel):
-    """Generates a N*T-by-N*T covariance matrix for a spatiotemporal Gaussian
+def gen_gp_cov(kernel, T, N):
+    """Generates a T*N-by-T*N covariance matrix for a spatiotemporal Gaussian
     process (2D Gaussian random field) with a provided kernel.
     Parameters
     ----------
@@ -20,7 +20,7 @@ def gen_gp_cov(T, N, kernel):
         however this is not enfored.
     Returns
     -------
-    C : np.ndarray, shape (N*T, N*T)
+    C : np.ndarray, shape (T*N, T*N)
         Covariance matrix for the Gaussian process. Time is the "outer" variable
         and space is the "inner" variable.
     """
@@ -28,12 +28,12 @@ def gen_gp_cov(T, N, kernel):
     t1, t2, x1, x2 = np.arange(T), np.arange(T), np.arange(N), np.arange(N)
     t1, t2, x1, x2 = np.meshgrid(t1, t2, x1, x2, indexing="ij")
     C = kernel(t1, t2, x1, x2)
-    C = C.swapaxes(1,2).reshape(N*T, N*T)
+    C = C.swapaxes(1,2).reshape(T*N, T*N)
 
     return C
 
 
-def calc_pi_for_gp(T, N, kernel):
+def calc_pi_for_gp(kernel, T_pi, N):
     """Calculates the predictive information in a spatiotemporal Gaussian process
     with a given kernel.
     Parameters
@@ -52,12 +52,11 @@ def calc_pi_for_gp(T, N, kernel):
         (Temporal) predictive information in the Gaussian process.
     """
 
-    cov_2T = gen_gp_cov(2*T, N, kernel)
-    cov_T = cov_2T[:N*T, :N*T]
-    sgn_T, logdet_T = np.linalg.slogdet(cov_T)
-    sgn_2T, logdet_2T = np.linalg.slogdet(cov_2T)
+    cov_2_T_pi = gen_gp_cov(kernel, 2*T_pi, N)
+    cov_T_pi = cov_2_T_pi[:T_pi*N, :T_pi*N]
+    sgn_T, logdet_T = np.linalg.slogdet(cov_T_pi)
+    sgn_2T, logdet_2T = np.linalg.slogdet(cov_2_T_pi)
     PI = logdet_T - 0.5*logdet_2T
-
     return PI
 
 
@@ -133,11 +132,10 @@ def sample_gp(T, N, kernel, num_to_concat=1):
     t1, t2, x1, x2 = np.arange(T), np.arange(T), np.arange(N), np.arange(N)
     t1, t2, x1, x2 = np.meshgrid(t1, t2, x1, x2, indexing="ij")
     C = kernel(t1, t2, x1, x2)
-    C = C.swapaxes(1,2).reshape(N*T, N*T)
+    C = C.swapaxes(1,2).reshape(T*N, T*N)
 
     sample = np.concatenate(np.random.multivariate_normal(mean=np.zeros(C.shape[0]), cov=C, size=num_to_concat))
     sample = sample.reshape(T*num_to_concat, N)
-
     return sample
 
 def embed_gp(T, N, d, kernel, noise_cov, T_pi, num_to_concat=1):
@@ -236,7 +234,7 @@ def embed_lorenz_system(T, integration_dt, data_dt, N, noise_cov):
 
     return X
 
-def gen_chaotic_rnn(file, N, T, dt, tau, gamma, x_0=None, noise_cov=None):
+def gen_chaotic_rnn(h5py_file, T, N, dt, tau, gamma, x_0=None, noise_cov=None):
 
     #Weight variance ~1/N
     W = np.random.normal(0, 1/np.sqrt(N), (N, N))
@@ -250,7 +248,7 @@ def gen_chaotic_rnn(file, N, T, dt, tau, gamma, x_0=None, noise_cov=None):
 
     num_timesteps = int(np.round(T / dt))
     dataset_shape = (num_timesteps, N)
-    X = file.create_dataset("data", dataset_shape, dtype=np.float64)
+    X = h5py_file.create_dataset("data", dataset_shape, dtype=np.float64)
     X[0, :] = x_0
 
     for i in range(1, num_timesteps):

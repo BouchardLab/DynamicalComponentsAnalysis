@@ -2,9 +2,33 @@ import numpy as np
 import scipy as sp
 import torch
 
-from cca.kron_pca import (cv_toeplitz, form_lag_matrix,
-                          toeplitz_reg_taper_shrink,
-                          toeplitzify)
+from .kron_pca import cv_toeplitz, toeplitz_reg_taper_shrink
+from .data_util import form_lag_matrix
+
+def rectify_spectrum(cov, epsilon=1e-6, verbose=False):
+    min_eig = np.min(scipy.linalg.eigvalsh(cov))
+    if min_eig < 0:
+        cov += (-min_eig + epsilon)*np.eye(cov.shape[0])
+        if verbose:
+            print("Warning: non-PSD matrix (had to increase eigenvalues)")
+
+def toeplitzify(C, T, N, symmetrize=True):
+    C_toep = np.zeros((T*N, T*N))
+    for delta_t in range(T):
+        to_avg_lower = np.zeros((T-delta_t, N, N))
+        to_avg_upper = np.zeros((T-delta_t, N, N))
+        for i in range(T - delta_t):
+            to_avg_lower[i] = C[(delta_t + i)*N : (delta_t + i + 1)*N, i*N : (i + 1)*N]
+            to_avg_upper[i] = C[i*N : (i + 1)*N, (delta_t + i)*N : (delta_t + i + 1)*N]
+        avg_lower = np.mean(to_avg_lower, axis=0)
+        avg_upper = np.mean(to_avg_upper, axis=0)
+        if symmetrize:
+            avg_lower = 0.5*(avg_lower + avg_upper.T)
+            avg_upper = 0.5*(avg_lower.T + avg_upper)
+        for i in range(T-delta_t):
+            C_toep[(delta_t + i)*N : (delta_t + i + 1)*N, i*N : (i + 1)*N] = avg_lower
+            C_toep[i*N : (i + 1)*N, (delta_t + i)*N : (delta_t + i + 1)*N] = avg_upper
+    return C_toep
 
 def calc_cross_cov_mats_from_data(X, T, regularization=None, reg_ops=None):
     """Compute a N-by-N cross-covariance matrix, where N is the data dimensionality,
@@ -45,25 +69,17 @@ def calc_cross_cov_mats_from_data(X, T, regularization=None, reg_ops=None):
         r_vals = np.arange(1, min(2*T, N**2 + 1))
         sigma_vals = np.concatenate([np.linspace(1, 4*T + 1, 10), [100. * T]])
         alpha_vals = np.concatenate([[0.], np.logspace(-2, -1, 10)])
-        ll_vals, opt_idx = cv_toeplitz(X_with_lags, N, T,
+        ll_vals, opt_idx = cv_toeplitz(X_with_lags, T, N,
                                           r_vals, sigma_vals, alpha_vals,
                                           num_folds=num_folds)
         ri, si, ai = opt_idx
         cov = np.cov(X_with_lags, rowvar=False)
-        cov_est = toeplitz_reg_taper_shrink(cov, N, T,
-                                            r_vals[ri],
-                                            sigma_vals[si],
-                                            alpha_vals[ai])
+        cov_est = toeplitz_reg_taper_shrink(cov, T, N, r_vals[ri], sigma_vals[si], alpha_vals[ai])
     else:
         raise ValueError
+
+    rectify_spectrum(cov_est, verbose=True)
     cross_cov_mats = calc_cross_cov_mats_from_cov(cov_est, T, N)
-
-    w = sp.linalg.eigvalsh(cov_est)
-    min_eig = np.min(w)
-    if min_eig <= 0:
-        print("Warning: spatiotemporal covariance matrix was not PSD (min eig = " + str(min_eig) + ")")
-        cross_cov_mats[0] += np.eye(N) * (1e-6 - min_eig)
-
     return cross_cov_mats
 
 
@@ -103,13 +119,16 @@ def calc_cross_cov_mats_from_cov(cov, T, N):
 
         for i in range(T-delta_t):
             i_offset = delta_t*N
-            to_avg_lower[i, :, :] = cov[i_offset+i*N:i_offset+(i+1)*N, i*N:(i+1)*N]
-            to_avg_upper[i, :, :] = cov[i*N:(i+1)*N, i_offset+i*N:i_offset+(i+1)*N]
+            to_avg_lower[i, :, :] = cov[(delta_t + i)*N : (delta_t + i + 1)*N, i*N : (i + 1)*N]
+            to_avg_upper[i, :, :] = cov[i*N : (i + 1)*N, (delta_t + i)*N : (delta_t + i + 1)*N]
+
+        avg_lower = to_avg_lower.mean(axis=0)
+        avg_upper = to_avg_upper.mean(axis=0)
 
         if use_torch:
-            cross_cov_mats[delta_t, :, :] = 0.5*(torch.mean(to_avg_lower, axis=0) + torch.mean(to_avg_upper, axis=0).T )
+            cross_cov_mats[delta_t, :, :] = 0.5*(avg_lower + avg_upper.t())
         else:
-            cross_cov_mats[delta_t, :, :] = 0.5*(np.mean(to_avg_lower, axis=0) + np.mean(to_avg_upper, axis=0).T )
+            cross_cov_mats[delta_t, :, :] = 0.5*(avg_lower + avg_upper.T)
 
     return cross_cov_mats
 
@@ -153,13 +172,13 @@ def calc_cov_from_cross_cov_mats(cross_cov_mats):
     return cov
 
 
-def calc_pi_from_cov(cov_2T_pi):
+def calc_pi_from_cov(cov_2_T_pi):
     """Calculates the mutual information ("predictive information"
     or "PI") between variables  {1,...,T_pi} and {T_pi+1,...,2*T_pi}, which
-    are jointly Gaussian with covariance matrix cov_2T_pi.
+    are jointly Gaussian with covariance matrix cov_2_T_pi.
     Parameters
     ----------
-    cov_2T_pi : np.ndarray, shape (2*T_pi, 2*T_pi)
+    cov_2_T_pi : np.ndarray, shape (2*T_pi, 2*T_pi)
         Covariance matrix.
     Returns
     -------
@@ -167,16 +186,16 @@ def calc_pi_from_cov(cov_2T_pi):
         Mutual information in bits.
     """
 
-    T_pi = cov_2T_pi.shape[0] // 2
-    use_torch = isinstance(cov_2T_pi, torch.Tensor)
+    T_pi = cov_2_T_pi.shape[0] // 2
+    use_torch = isinstance(cov_2_T_pi, torch.Tensor)
 
-    cov_T_pi = cov_2T_pi[:T_pi, :T_pi]
+    cov_T_pi = cov_2_T_pi[:T_pi, :T_pi]
     if use_torch:
         logdet_T_pi = torch.slogdet(cov_T_pi)[1]
-        logdet_2T_pi = torch.slogdet(cov_2T_pi)[1]
+        logdet_2T_pi = torch.slogdet(cov_2_T_pi)[1]
     else:
         logdet_T_pi = np.linalg.slogdet(cov_T_pi)[1]
-        logdet_2T_pi = np.linalg.slogdet(cov_2T_pi)[1]
+        logdet_2T_pi = np.linalg.slogdet(cov_2_T_pi)[1]
 
     PI = logdet_T_pi - .5 * logdet_2T_pi
     return PI
@@ -249,7 +268,7 @@ def calc_pi_from_cross_cov_mats(cross_cov_mats, proj=None):
     else:
         cross_cov_mats_proj = cross_cov_mats
 
-    cov_2T = calc_cov_from_cross_cov_mats(cross_cov_mats_proj)
-    PI = calc_pi_from_cov(cov_2T)
+    cov_2_T_pi = calc_cov_from_cross_cov_mats(cross_cov_mats_proj)
+    PI = calc_pi_from_cov(cov_2_T_pi)
 
     return PI

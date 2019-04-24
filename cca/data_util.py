@@ -55,15 +55,17 @@ def load_sabes_data(filename, bin_width_s=0.1, session=None):
     X, Y = sum_over_chunks(X, chunk_size), sum_over_chunks(Y, chunk_size)/chunk_size
     return X, Y
 
-def load_neuro_data(filename, bin_width_s=0.1):
+def load_neural_data(filename, bin_width_s=0.1):
     file = open(filename, "rb")
     data = pickle.load(file)
     X, Y = data[0], data[1]
-    X, Y = X[200:-200, :], Y[200:-200, :]
-    chunk_size = int(np.round(bin_width_s / .05))
-    X, Y = sum_over_chunks(X, chunk_size), sum_over_chunks(Y, chunk_size)/chunk_size
+    good_X_idx = (1 - (np.isnan(X[:, 0]) + np.isnan(X[:, 1]))).astype(np.bool)
+    good_Y_idx = (1 - (np.isnan(Y[:, 0]) + np.isnan(Y[:, 1]))).astype(np.bool)
+    good_idx = good_X_idx*good_Y_idx
+    X, Y = X[good_idx], Y[good_idx]
+    chunk_size = int(np.round(bin_width_s / 0.05)) #50 ms default bin width
+    X, Y = sum_over_chunks(X, chunk_size), sum_over_chunks(Y, chunk_size)
     return X, Y
-
 
 def load_mocap_data(filename, z_score=True):
 	angles = []
@@ -90,3 +92,37 @@ def load_mocap_data(filename, z_score=True):
 			line = f.readline().strip()
 	angles = np.array(angles)
 	return angles
+
+class CrossValidate:
+    def __init__(self, X, Y, num_folds):
+        self.X, self.Y = X, Y
+        self.num_folds = num_folds
+        self.fold_size = len(X) // num_folds
+
+    def __iter__(self):
+        self.fold_idx = 0
+        return self
+
+    def __next__(self):
+        fold_idx, fold_size = self.fold_idx, self.fold_size
+        if fold_idx == self.num_folds:
+            raise StopIteration
+            
+        i1 = fold_idx*fold_size
+        i2 = (fold_idx + 1)*fold_size
+        
+        X, Y = self.X, self.Y
+        X_test = X[i1:i2]
+        Y_test = Y[i1:i2]
+        X_train = np.vstack((X[:i1], X[i2:]))
+        Y_train = np.vstack((Y[:i1], Y[i2:]))
+        
+        self.fold_idx += 1
+        return X_train, X_test, Y_train, Y_test, fold_idx
+
+
+
+
+
+
+

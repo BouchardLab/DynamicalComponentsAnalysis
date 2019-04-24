@@ -36,8 +36,8 @@ class memoized(object):
       return functools.partial(self.__call__, obj)
 
 @memoized
-def pv_permutation(N, T):
-    I = np.arange(T**2 * N**2, dtype=np.int).reshape((N*T, N*T))
+def pv_permutation(T, N):
+    I = np.arange(T**2 * N**2, dtype=np.int).reshape((T*N, T*N))
     I_perm = np.zeros(( T**2, N**2 ), dtype=np.int)
     for i in range(T):
         for j in range(T):
@@ -48,14 +48,14 @@ def pv_permutation(N, T):
     perm_inv = perm.argsort()
     return perm, perm_inv
 
-def pv_rearrange(C, N, T):
-    perm, _ = pv_permutation(N, T)
+def pv_rearrange(C, T, N):
+    perm, _ = pv_permutation(T, N)
     C_prime = C.ravel()[perm].reshape((T**2, N**2))
     return C_prime
 
-def pv_rearrange_inv(C, N, T):
-    _, perm_inv = pv_permutation(N, T)
-    C_prime = C.ravel()[perm_inv].reshape((N*T, N*T))
+def pv_rearrange_inv(C, T, N):
+    _, perm_inv = pv_permutation(T, N)
+    C_prime = C.ravel()[perm_inv].reshape((T*N, T*N))
     return C_prime
 
 def build_P(T):
@@ -66,30 +66,35 @@ def build_P(T):
         P[offset+T-1, diag_idx-1] = 1/np.sqrt(T - np.abs(offset))
     return P
 
-def toeplitzify(C, N, T):
-    C_toep = np.zeros((N*T, N*T))
+def toeplitzify(C, T, N, symmetrize=True):
+    C_toep = np.zeros((T*N, T*N))
     for delta_t in range(T):
         to_avg_lower = np.zeros((T-delta_t, N, N))
         to_avg_upper = np.zeros((T-delta_t, N, N))
 
-        for i in range(T-delta_t):
-            to_avg_lower[i, :, :] = C[(delta_t + i)*N : (delta_t + i + 1)*N, i*N : (i + 1)*N]
-            to_avg_upper[i, :, :] = C[i*N : (i + 1)*N, (delta_t + i)*N : (delta_t + i + 1)*N]
+        for i in range(T - delta_t):
+            to_avg_lower[i] += C[(delta_t + i)*N : (delta_t + i + 1)*N, i*N : (i + 1)*N]
+            to_avg_upper[i] += C[i*N : (i + 1)*N, (delta_t + i)*N : (delta_t + i + 1)*N]
 
-        block_avg = 0.5*(np.mean(to_avg_lower, axis=0) + np.mean(to_avg_upper, axis=0).T)
+        avg_lower = np.mean(to_avg_lower, axis=0)
+        avg_upper = np.mean(to_avg_upper, axis=0)
+
+        if symmetrize:
+            avg_lower = 0.5*(avg_lower + avg_upper.T)
+            avg_upper = 0.5*(avg_lower.T + avg_upper)
 
         for i in range(T-delta_t):
-            C_toep[(delta_t + i)*N : (delta_t + i + 1)*N, i*N : (i + 1)*N] = block_avg
-            C_toep[i*N : (i + 1)*N, (delta_t + i)*N : (delta_t + i + 1)*N] = block_avg.T
+            C_toep[(delta_t + i)*N : (delta_t + i + 1)*N, i*N : (i + 1)*N] = avg_lower
+            C_toep[i*N : (i + 1)*N, (delta_t + i)*N : (delta_t + i + 1)*N] = avg_upper
 
     return C_toep
 
-def form_lag_matrix(X, num_lags, skip=1):
-    n = floor((len(X) - num_lags)/skip)
+def form_lag_matrix(X, T, stride=1):
     N = X.shape[1]
-    X_with_lags = np.zeros((n, N*num_lags))
-    for i in range(n):
-        X_with_lags[i, :] = X[i*skip : i*skip + num_lags, :].ravel()
+    num_lagged_samples = floor((len(X) - T)/stride) + 1 #number of lagged samples
+    X_with_lags = np.zeros((num_lagged_samples, T*N))
+    for i in range(num_lagged_samples):
+        X_with_lags[i, :] = X[i*stride : i*stride + T, :].flatten()
     return X_with_lags
 
 def calc_cov_local_mean(X, bin_size, stride=1):
@@ -176,6 +181,13 @@ def cv_toeplitz(X_with_lags, N, T, r_vals, sigma_vals, alpha_vals, num_folds=10,
         num_samples = len(X_test)
 
         cov_train, cov_test = np.cov(X_train.T), np.cov(X_test.T)
+        min_eig_train = np.min(scipy.linalg.eigvalsh(cov_train))
+        min_eig_test = np.min(scipy.linalg.eigvalsh(cov_test))
+        if min_eig_train < 0:
+            cov_train += (-cov_train + 1e-4)*np.eye(cov_train.shape[0])
+        if min_eig_test < 0:
+            cov_test += (-cov_test + 1e-4)*np.eye(cov_test.shape[0])
+            
         R_C = pv_rearrange(cov_train, N, T)
         to_svd = P.dot(R_C)
         U, s, Vt = randomized_svd(to_svd, n_components=np.max(r_vals), n_iter=40, random_state=42)
@@ -202,26 +214,6 @@ def cv_toeplitz(X_with_lags, N, T, r_vals, sigma_vals, alpha_vals, num_folds=10,
     opt_idx = np.unravel_index(ll_vals.mean(axis=0).argmax(), ll_vals.shape[1:])
     return ll_vals, opt_idx
 
-"""
-def shrinkage_likelihood(X, alpha):
-    n, p = X.shape
-    beta = (1 - alpha)/(n - 1)
-    S = np.dot(X.T, X)/n
-    G_alpha = n*beta*S + alpha*np.eye(p)
-    G_alpha_inv = scipy.linalg.inv(G_alpha)
-    log_det_G_alpha = np.linalg.slogdet(G_alpha)[1]
-    part_1 = 0.5*(p*np.log(2*np.pi) + log_det_G_alpha)
-    part_2 = 0
-    #n_prime = n
-    #random_idx = np.random.choice(np.arange(n), size=n_prime)
-    print("Start...")
-    for k in range(n):
-        x_k = X[k, :]
-        r_k = x_k.dot(G_alpha_inv).dot(x_k)
-        part_2 += np.log(1 - beta*r_k) + r_k/(1 - beta*r_k)
-    ll = part_1 + (1/(2*n))*part_2
-    return ll
 
-alpha_vals = np.linspace(0, 1, 20)
-ll_vals = np.array([shrinkage_likelihood(X_lags_downsample, alpha) for alpha in alpha_vals])
-"""
+
+

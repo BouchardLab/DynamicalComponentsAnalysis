@@ -118,7 +118,6 @@ def calc_cross_cov_mats_from_cov(cov, T, N):
             to_avg_upper = np.zeros((T-delta_t, N, N))
 
         for i in range(T-delta_t):
-            i_offset = delta_t*N
             to_avg_lower[i, :, :] = cov[(delta_t + i)*N : (delta_t + i + 1)*N, i*N : (i + 1)*N]
             to_avg_upper[i, :, :] = cov[i*N : (i + 1)*N, (delta_t + i)*N : (delta_t + i + 1)*N]
 

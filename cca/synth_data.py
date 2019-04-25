@@ -2,8 +2,8 @@ import numpy as np
 import scipy
 import h5py
 
-from cca.cov_util import calc_cov_from_cross_cov_mats, calc_cross_cov_mats_from_cov, calc_pi_from_cov
-from cca.data_util import sum_over_chunks
+from .cov_util import calc_cov_from_cross_cov_mats, calc_cross_cov_mats_from_cov, calc_pi_from_cov
+from .data_util import sum_over_chunks
 
 def gen_gp_cov(kernel, T, N):
     """Generates a T*N-by-T*N covariance matrix for a spatiotemporal Gaussian

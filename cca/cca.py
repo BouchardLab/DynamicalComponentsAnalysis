@@ -6,8 +6,7 @@ from scipy.signal.windows import hann
 import torch
 import torch.nn.functional as F
 
-from .cov_util import (calc_cross_cov_mats_from_data,
-                       calc_pi_from_cross_cov_mats)
+from .cov_util import calc_cross_cov_mats_from_data, calc_pi_from_cross_cov_mats
 
 __all__ = ["ComplexityComponentsAnalysis"]
 

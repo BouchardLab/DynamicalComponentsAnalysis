@@ -51,30 +51,6 @@ def calc_autocorr_fns(X, T):
 		autocorr_fns[:, dt] = np.sum((X[dt:]*X[:len(X)-dt]), axis=0)/(len(X)-dt)
 	return autocorr_fns
 
-def load_sabes_data(filename, bin_width_s=0.1, session=None):
-    f = h5py.File(filename, "r")
-    sessions = list(f.keys())
-    lengths = np.array([f[session]["M1"]["spikes"].shape[0] for session in sessions])
-    if session is None:
-    	#Use longest session
-    	session = sessions[np.argsort(lengths)[::-1][0]]
-    X, Y = f[session]["M1"]["spikes"], f[session]["cursor"]
-    chunk_size = int(np.round(bin_width_s / .05))
-    X, Y = sum_over_chunks(X, chunk_size), sum_over_chunks(Y, chunk_size)/chunk_size
-    return X, Y
-
-def load_neural_data(filename, bin_width_s=0.1):
-    file = open(filename, "rb")
-    data = pickle.load(file)
-    X, Y = data[0], data[1]
-    good_X_idx = (1 - (np.isnan(X[:, 0]) + np.isnan(X[:, 1]))).astype(np.bool)
-    good_Y_idx = (1 - (np.isnan(Y[:, 0]) + np.isnan(Y[:, 1]))).astype(np.bool)
-    good_idx = good_X_idx*good_Y_idx
-    X, Y = X[good_idx], Y[good_idx]
-    chunk_size = int(np.round(bin_width_s / 0.05)) #50 ms default bin width
-    X, Y = sum_over_chunks(X, chunk_size), sum_over_chunks(Y, chunk_size)
-    return X, Y
-
 def load_mocap_data(filename, z_score=True):
 	angles = []
 	with open(filename) as f:

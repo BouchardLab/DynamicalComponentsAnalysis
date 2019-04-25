@@ -168,7 +168,7 @@ class ComplexityComponentsAnalysis(object):
                     loss_no_reg = loss - reg_val
                     loss = loss.detach().cpu().numpy()
                     reg_val = reg_val.detach().cpu().numpy()
-                    print("PI: {} bits, reg: {}".format(str(np.round(-loss, 4)),
+                    print("PI: {} nats, reg: {}".format(str(np.round(-loss, 4)),
                                                         str(np.round(reg_val, 4))))
                 callback(V_init)
             else:
@@ -199,7 +199,7 @@ class ComplexityComponentsAnalysis(object):
                     loss_no_reg = loss - reg_val
                     pi = -loss_no_reg.detach().cpu().numpy()
                     reg_val = reg_val.detach().cpu().numpy()
-                    print("PI: {} bits, reg: {}".format(str(np.round(pi, 4)),
+                    print("PI: {} nats, reg: {}".format(str(np.round(pi, 4)),
                                                         str(np.round(reg_val, 4))))
                 return loss
 
@@ -233,14 +233,20 @@ def make_cepts2(X, T_pi):
     """Calculate the squared real cepstral coefficents."""
     Y = F.unfold(X, kernel_size=[T_pi, 1], stride=T_pi)
     Y = torch.transpose(Y, 1, 2)
+
+    # Compower the power spectral density
     window = torch.Tensor(hann(Y.shape[-1])[np.newaxis, np.newaxis])
     Yf = torch.rfft(Y * window, 1, onesided=True)
     spect = Yf[:, :, :, 0]**2 + Yf[:, :, :, 1]**2
-    spect = torch.max(spect, torch.Tensor([1e-6]))
+    spect = spect.mean(dim=1)
+    spect = torch.cat([torch.flip(spect[:, 1:], dims=(1,)), spect], dim=1)
+
+    # Log of the DFT of the autocorrelation
     logspect = torch.log(spect) - np.log(float(Y.shape[-1]))
-    spect = torch.stack([logspect,
-                         torch.zeros_like(spect)], dim=-1)
-    cepts = torch.irfft(spect, 1, onesided=True, signal_sizes=[Y.shape[2]]) / float(Y.shape[-1])
+
+    # Compute squared cepstral coefs (b_k^2)
+    cepts = torch.rfft(logspect, 1, onesided=True) / float(Y.shape[-1])
+    cepts = torch.sqrt(cepts[:, :, 0]**2 + cepts[:, :, 1]**2)
     return cepts**2
 
 def pi_fft_loss_fn(X, T_pi):
@@ -252,14 +258,14 @@ def pi_fft_loss_fn(X, T_pi):
     Xp_tensor = torch.unsqueeze(Xp_tensor, 1)
     bs2 = make_cepts2(Xp_tensor, T_pi)
     ks = torch.arange(bs2.shape[-1], dtype=bs2.dtype)
-    return (torch.unsqueeze(ks, 0) * bs2).sum(dim=1).sum()
+    return .5 * (torch.unsqueeze(ks, 0) * bs2).sum(dim=1).sum()
 
 
 class DynamicalComponentsAnalysisFFT(object):
     """Dynamical Components Analysis.
 
-    Runs FCA on multidimensional timeseries data X to discover a projection
-    onto a d-dimensional subspace which maximizes the entropy of the power spectrum.
+    Runs DCA on multidimensional timeseries data X to discover a projection
+    onto a d-dimensional subspace which maximizes the dynamical complexity.
     Parameters
     ----------
     d: int
@@ -286,8 +292,8 @@ class DynamicalComponentsAnalysisFFT(object):
         self.cross_covs = None
 
     def fit(self, X, d=None, n_init=None):
-        self.pca = PCA()
-        X = self.pca.fit_transform(X)
+        self.mean_ = X.mean(axis=0, keepdims=True)
+        X = X - self.mean_
         if n_init is None:
             n_init = self.n_init
         pis = []
@@ -332,11 +338,11 @@ class DynamicalComponentsAnalysisFFT(object):
                                             device=self.device,
                                             dtype=self.dtype)
                 v_torch = v_flat_torch.reshape(N, d)
-                ent = ent_loss_fn(Xt, v_torch, self.T)
+                ent = pi_fft_loss_fn(Xt, v_torch, self.T)
                 reg_val = ortho_reg_fn(v_torch, self.ortho_lambda)
                 ent = ent.detach().cpu().numpy()
                 reg_val = reg_val.detach().cpu().numpy()
-                print("Ent: {} bits, reg: {}".format(str(np.round(ent, 4)),
+                print("PI: {} nats, reg: {}".format(str(np.round(ent, 4)),
                                                     str(np.round(reg_val, 4))))
             callback(V_init)
         else:
@@ -347,7 +353,7 @@ class DynamicalComponentsAnalysisFFT(object):
                                         device=self.device,
                                         dtype=self.dtype)
             v_torch = v_flat_torch.reshape(N, d)
-            ent = ent_loss_fn(Xt, v_torch, self.T)
+            ent = pi_fft_loss_fn(Xt, v_torch, self.T)
             reg_val = ortho_reg_fn(v_torch, self.ortho_lambda)
             loss = ent + reg_val
             loss.backward()
@@ -365,11 +371,11 @@ class DynamicalComponentsAnalysisFFT(object):
                                     device=self.device,
                                     dtype=self.dtype)
         v_torch = v_flat_torch.reshape(N, d)
-        final_pi = ent_loss_fn(Xt, v_torch, self.T).detach().cpu().numpy()
+        final_pi = pi_fft_loss_fn(Xt, v_torch, self.T).detach().cpu().numpy()
         return V_opt, final_pi
 
     def transform(self, X):
-        X = self.pca.transform(X)
+        X = X - self.mean_
         return X.dot(self.coef_)
 
     def fit_transform(self, X, d=None, T=None, regularization=None,

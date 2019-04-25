@@ -68,7 +68,7 @@ class ForcastableComponentsAnalysis(object):
         self.cross_covs = None
 
     def fit(self, X, d=None, n_init=None):
-        self.pca = PCA()
+        self.pca = PCA(whiten=True)
         X = self.pca.fit_transform(X)
         if n_init is None:
             n_init = self.n_init

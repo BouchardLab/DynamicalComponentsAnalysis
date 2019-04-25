@@ -6,8 +6,6 @@ from sklearn.utils.extmath import randomized_svd
 import matplotlib.pyplot as plt
 from math import floor
 
-from .cov_util import rectify_spectrum
-
 class memoized(object):
    """Decorator for memoization.
    From: https://wiki.python.org/moin/PythonDecoratorLibrary.

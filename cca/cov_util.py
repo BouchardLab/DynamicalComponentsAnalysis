@@ -5,7 +5,7 @@ import torch
 from .data_util import form_lag_matrix
 
 def rectify_spectrum(cov, epsilon=1e-6, verbose=False):
-    min_eig = np.min(scipy.linalg.eigvalsh(cov))
+    min_eig = np.min(sp.linalg.eigvalsh(cov))
     if min_eig < 0:
         cov += (-min_eig + epsilon)*np.eye(cov.shape[0])
         if verbose:
@@ -57,8 +57,8 @@ def calc_cross_cov_mats_from_data(X, T, regularization=None, reg_ops=None):
 
     if reg_ops is None:
         reg_ops = dict()
-    skip = reg_ops.get('skip', 1)
-    X_with_lags = form_lag_matrix(X, T, skip=skip)
+    stride = reg_ops.get('stride', 1)
+    X_with_lags = form_lag_matrix(X, T, stride=stride)
 
     if regularization is None:
         cov_est = np.cov(X_with_lags, rowvar=False)
@@ -421,8 +421,3 @@ def cv_toeplitz(X_with_lags, T, N, r_vals, sigma_vals, alpha_vals, num_folds=10,
 
     opt_idx = np.unravel_index(ll_vals.mean(axis=0).argmax(), ll_vals.shape[1:])
     return ll_vals, opt_idx
-
-
-
-
-

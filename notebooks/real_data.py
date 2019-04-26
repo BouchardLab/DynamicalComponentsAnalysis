@@ -14,6 +14,7 @@ from cca import ComplexityComponentsAnalysis
 M1_DATA_FILENAME = "/home/davidclark/Projects/DataUtil/nhp_reaches_sorted.hdf5"
 HIPPOCAMPUS_DATA_FILENAME = "/home/davidclark/Projects/ComplexityComponentsAnalysis/neuro_data/example_data_hc.pickle"
 WEATHER_DATA_FILENMAE = "/home/davidclark/Projects/ComplexityComponentsAnalysis/notebooks/weather/temperature.csv"
+CACHE_FILENAME = "data_cache.pickle"
 
 #set results filenames
 RESULTS_FILENAME = "good_results.hdf5"
@@ -92,7 +93,7 @@ def load_kording_paper_data(filename, bin_width_s=0.1, min_spike_count=10):
     good_idx = good_X_idx*good_Y_idx
     X, Y = X[good_idx], Y[good_idx]
     chunk_size = int(np.round(bin_width_s / 0.05)) #50 ms default bin width
-    X, Y = sum_over_chunks(X, chunk_size), sum_over_chunks(Y, chunk_size)
+    X, Y = sum_over_chunks(X, chunk_size), sum_over_chunks(Y, chunk_size)/chunk_size
     X = X[:, np.sum(X, axis=0) > min_spike_count]
     return X, Y
 
@@ -183,17 +184,32 @@ def run_analysis(h5py_group, X, Y, T_pi_vals, dim_vals, offset_vals, num_cv_fold
                     results[fold_idx, dim_idx, offset_idx, T_pi_idx + 2] = r2_dca
 
                 
-if __name__ == "__main__":
-    #load weather data
+def cache_data():
     X_weather = load_weather_data(WEATHER_DATA_FILENMAE)
     Y_weather = np.copy(X_weather)
-
-    #load M1 data
     X_m1, Y_m1 = load_sabes_data(M1_DATA_FILENAME, bin_width_s=0.1, min_spike_count=1000)
-
-    #load Hippocampus data
     X_hc, Y_hc = load_kording_paper_data(HIPPOCAMPUS_DATA_FILENAME, bin_width_s=0.1, min_spike_count=10)
+    data = {"weather": (X_weather, Y_weather),
+            "m1": (X_m1, Y_m1),
+            "hc": (X_hc, Y_hc),}
+    with open(CACHE_FILENAME, "wb") as f:
+        pickle.dump(data, f)
 
+def load_cached_data():
+    with open(CACHE_FILENAME, "rb") as f:
+        data = pickle.load(f)
+        X_weather, Y_weather = data["weather"]
+        X_m1, Y_m1 = data["m1"]
+        X_hc, Y_hc = data["hc"]
+    return X_weather, Y_weather, X_m1, Y_m1, X_hc, Y_hc
+
+if __name__ == "__main__":
+    cache_exists = os.path.isfile(CACHE_FILENAME)
+    if not cache_exists:
+        cache_data()
+
+    X_weather, Y_weather, X_m1, Y_m1, X_hc, Y_hc = load_cached_data()
+    
     #save params
     if DELETE_OLD_FILE:
         try:
@@ -210,3 +226,5 @@ if __name__ == "__main__":
 
     hc_group = f.create_group("hc")
     run_analysis(hc_group, X_hc, Y_hc, T_PI_VALS, DIM_VALS, OFFSET_VALS, NUM_CV_FOLDS, DECODING_WINDOW)
+
+

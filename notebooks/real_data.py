@@ -118,11 +118,11 @@ def load_weather_data(filename):
 
 def run_analysis(h5py_group, X, Y, T_pi_vals, dim_vals, offset_vals, num_cv_folds, decoding_window):
     #save params
-    f.attrs["T_pi_vals"] = T_pi_vals
-    f.attrs["dim_vals"] = dim_vals
-    f.attrs["offset_vals"] = offset_vals
-    f.attrs["num_cv_folds"] = num_cv_folds
-    f.attrs["decoding_window"] = decoding_window
+    h5py_group.attrs["T_pi_vals"] = T_pi_vals
+    h5py_group.attrs["dim_vals"] = dim_vals
+    h5py_group.attrs["offset_vals"] = offset_vals
+    h5py_group.attrs["num_cv_folds"] = num_cv_folds
+    h5py_group.attrs["decoding_window"] = decoding_window
 
     #create results array
     #for the 'T_pi_vals' dimension, indices 0 and 1 correspond to PCA and SFA, respectively
@@ -140,14 +140,20 @@ def run_analysis(h5py_group, X, Y, T_pi_vals, dim_vals, offset_vals, num_cv_fold
         X_test_ctd = X_test - X_test.mean(axis=0)
         Y_train_ctd = Y_train - Y_train.mean(axis=0)
         Y_test_ctd = Y_test - Y_test.mean(axis=0)
-        
+
+        #remove any zero columns from data matrices
+        min_std = 1e-6
+        good_cols = (X_train_ctd.std(axis=0) > min_std) * (X_test_ctd.std(axis=0) > min_std)
+        X_train_ctd = X_train_ctd[:, good_cols]
+        X_test_ctd = X_test_ctd[:, good_cols]
+
         #compute cross-cov mats for DCA
         T_max = 2*np.max(T_pi_vals)
         cross_cov_mats = calc_cross_cov_mats_from_data(X_train_ctd, T_max)
         
         #do PCA/SFA
-        V_pca = pca_proj(X_train)
-        V_sfa = sfa_proj(X_train)
+        V_pca = pca_proj(X_train_ctd)
+        V_sfa = sfa_proj(X_train_ctd)
         
         #make DCA object
         opt = ComplexityComponentsAnalysis(verbose=False)
@@ -155,6 +161,7 @@ def run_analysis(h5py_group, X, Y, T_pi_vals, dim_vals, offset_vals, num_cv_fold
         #loop over dimensionalities
         for dim_idx in range(len(dim_vals)):
             dim = dim_vals[dim_idx]
+            #print("dim", dim_idx + 1, "of", len(dim_vals))
             
             #compute PCA/SFA R2 vals
             X_train_pca = np.dot(X_train_ctd, V_pca[:, :dim])
@@ -163,8 +170,8 @@ def run_analysis(h5py_group, X, Y, T_pi_vals, dim_vals, offset_vals, num_cv_fold
             X_test_sfa = np.dot(X_test_ctd, V_sfa[:, :dim])
             for offset_idx in range(len(offset_vals)):
                 offset = offset_vals[offset_idx]
-                r2_pca = linear_decode_r2(X_train_pca, Y_train, X_test_pca, Y_test, decoding_window=decoding_window, offset=offset)
-                r2_sfa = linear_decode_r2(X_train_sfa, Y_train, X_test_sfa, Y_test, decoding_window=decoding_window, offset=offset)
+                r2_pca = linear_decode_r2(X_train_pca, Y_train_ctd, X_test_pca, Y_test_ctd, decoding_window=decoding_window, offset=offset)
+                r2_sfa = linear_decode_r2(X_train_sfa, Y_train_ctd, X_test_sfa, Y_test_ctd, decoding_window=decoding_window, offset=offset)
                 results[fold_idx, dim_idx, offset_idx, 0] = r2_pca
                 results[fold_idx, dim_idx, offset_idx, 1] = r2_sfa
             
@@ -180,15 +187,15 @@ def run_analysis(h5py_group, X, Y, T_pi_vals, dim_vals, offset_vals, num_cv_fold
                 X_test_dca = np.dot(X_test_ctd, V_dca)
                 for offset_idx in range(len(offset_vals)):
                     offset = offset_vals[offset_idx]
-                    r2_dca = linear_decode_r2(X_train_dca, Y_train, X_test_dca, Y_test, decoding_window=decoding_window, offset=offset)
+                    r2_dca = linear_decode_r2(X_train_dca, Y_train_ctd, X_test_dca, Y_test_ctd, decoding_window=decoding_window, offset=offset)
                     results[fold_idx, dim_idx, offset_idx, T_pi_idx + 2] = r2_dca
 
                 
 def cache_data():
     X_weather = load_weather_data(WEATHER_DATA_FILENMAE)
     Y_weather = np.copy(X_weather)
-    X_m1, Y_m1 = load_sabes_data(M1_DATA_FILENAME, bin_width_s=0.1, min_spike_count=1000)
-    X_hc, Y_hc = load_kording_paper_data(HIPPOCAMPUS_DATA_FILENAME, bin_width_s=0.1, min_spike_count=10)
+    X_m1, Y_m1 = load_sabes_data(M1_DATA_FILENAME, bin_width_s=0.05, min_spike_count=1000)
+    X_hc, Y_hc = load_kording_paper_data(HIPPOCAMPUS_DATA_FILENAME, bin_width_s=0.05, min_spike_count=10)
     data = {"weather": (X_weather, Y_weather),
             "m1": (X_m1, Y_m1),
             "hc": (X_hc, Y_hc),}
@@ -218,13 +225,16 @@ if __name__ == "__main__":
             pass
     f = h5py.File(RESULTS_FILENAME, "w-")
 
+    print("HC:")
+    hc_group = f.create_group("hc")
+    run_analysis(hc_group, X_hc, Y_hc, T_PI_VALS, DIM_VALS[:3], OFFSET_VALS, NUM_CV_FOLDS, DECODING_WINDOW)
+
+    print("Weather:")
     weather_group = f.create_group("weather")
     run_analysis(weather_group, X_weather, Y_weather, T_PI_VALS, [d for d in DIM_VALS if d < 30], OFFSET_VALS, NUM_CV_FOLDS, DECODING_WINDOW)
 
+    print("M1:")
     m1_group = f.create_group("m1")
     run_analysis(m1_group, X_m1, Y_m1, T_PI_VALS, DIM_VALS, OFFSET_VALS, NUM_CV_FOLDS, DECODING_WINDOW)
-
-    hc_group = f.create_group("hc")
-    run_analysis(hc_group, X_hc, Y_hc, T_PI_VALS, DIM_VALS, OFFSET_VALS, NUM_CV_FOLDS, DECODING_WINDOW)
 
 

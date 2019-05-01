@@ -4,6 +4,7 @@ import pandas as pd
 import pickle
 import os
 import scipy
+import datetime
 
 from cca.data_util import sum_over_chunks, CrossValidate
 from cca.cov_util import calc_cross_cov_mats_from_data
@@ -14,18 +15,18 @@ from cca import ComplexityComponentsAnalysis
 M1_DATA_FILENAME = "/home/davidclark/Projects/DataUtil/nhp_reaches_sorted.hdf5"
 HIPPOCAMPUS_DATA_FILENAME = "/home/davidclark/Projects/ComplexityComponentsAnalysis/neuro_data/example_data_hc.pickle"
 WEATHER_DATA_FILENMAE = "/home/davidclark/Projects/ComplexityComponentsAnalysis/notebooks/weather/temperature.csv"
-CACHE_FILENAME = "data_cache.pickle"
+CACHE_FILENAME = "data_cache_50ms_bins.pickle"
 
-#set results filenames
-RESULTS_FILENAME = "good_results.hdf5"
-DELETE_OLD_FILE = True
+#set results file directory
+RESULTS_DIR = "decode_results/"
 
 #set analysis params
-T_PI_VALS = [1, 2, 3, 4, 5, 6, 7]
-DIM_VALS = [1, 5, 10, 20, 30, 40]
-OFFSET_VALS = [0, 5, 10]
+T_PI_VALS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+DIM_VALS = [5, 10, 15, 25] #, 30, 40, 50]
+OFFSET_VALS = [0, 5, 10, 15]#, 20]
 NUM_CV_FOLDS = 5
 DECODING_WINDOW = 3
+N_INIT = 3
 
 def pca_proj(X):
     X = X - X.mean(axis=0)
@@ -156,12 +157,12 @@ def run_analysis(h5py_group, X, Y, T_pi_vals, dim_vals, offset_vals, num_cv_fold
         V_sfa = sfa_proj(X_train_ctd)
         
         #make DCA object
-        opt = ComplexityComponentsAnalysis(verbose=False)
+        opt = ComplexityComponentsAnalysis(verbose=False, tol=1e-6)
         
         #loop over dimensionalities
         for dim_idx in range(len(dim_vals)):
             dim = dim_vals[dim_idx]
-            #print("dim", dim_idx + 1, "of", len(dim_vals))
+            print("dim", dim_idx + 1, "of", len(dim_vals))
             
             #compute PCA/SFA R2 vals
             X_train_pca = np.dot(X_train_ctd, V_pca[:, :dim])
@@ -179,7 +180,7 @@ def run_analysis(h5py_group, X, Y, T_pi_vals, dim_vals, offset_vals, num_cv_fold
             for T_pi_idx in range(len(T_pi_vals)):
                 T_pi = T_pi_vals[T_pi_idx]
                 opt.cross_covs = cross_cov_mats[:2*T_pi]
-                opt.fit_projection(d=dim)
+                opt.fit_projection(d=dim, n_init=N_INIT)
                 V_dca = opt.coef_
                 
                 #compute DCA R2 over offsets
@@ -216,25 +217,48 @@ if __name__ == "__main__":
         cache_data()
 
     X_weather, Y_weather, X_m1, Y_m1, X_hc, Y_hc = load_cached_data()
+
+    #Add kinematics
+    """
+    Y_m1_vel = np.diff(Y_m1, axis=0)
+    Y_m1 = np.concatenate((Y_m1[:-1], Y_m1_vel), axis=1)
+    X_m1 = X_m1[:-1]
+
+    Y_hc_vel = np.diff(Y_hc, axis=0)
+    Y_hc = np.concatenate((Y_hc[:-1], Y_hc_vel), axis=1)
+    X_hc = X_hc[:-1]
+    """
     
     #save params
+    """
     if DELETE_OLD_FILE:
         try:
             os.remove(RESULTS_FILENAME)
         except OSError:
             pass
-    f = h5py.File(RESULTS_FILENAME, "w-")
+    """
+
+    date_time_str = "{date:%Y_%m_%d_%H_%M_%S}".format(date=datetime.datetime.now())
+    results_filename = RESULTS_DIR + "decode_results" + date_time_str + ".hdf5"
+    print(results_filename)
+    f = h5py.File(results_filename, "w-")
 
     print("HC:")
     hc_group = f.create_group("hc")
-    run_analysis(hc_group, X_hc, Y_hc, T_PI_VALS, DIM_VALS[:3], OFFSET_VALS, NUM_CV_FOLDS, DECODING_WINDOW)
+    hc_group.attrs["timestep"] = 50
+    hc_group.attrs["timestep_units"] = "ms"
+    run_analysis(hc_group, X_hc, Y_hc, T_PI_VALS, [d for d in DIM_VALS if d < 48], OFFSET_VALS, NUM_CV_FOLDS, DECODING_WINDOW)
 
     print("Weather:")
     weather_group = f.create_group("weather")
-    run_analysis(weather_group, X_weather, Y_weather, T_PI_VALS, [d for d in DIM_VALS if d < 30], OFFSET_VALS, NUM_CV_FOLDS, DECODING_WINDOW)
+    weather_group.attrs["timestep"] = 1
+    weather_group.attrs["timestep_units"] = "days"
+    run_analysis(weather_group, X_weather, Y_weather, T_PI_VALS, [d for d in DIM_VALS if d < X_weather.shape[1]], OFFSET_VALS, NUM_CV_FOLDS, DECODING_WINDOW)
 
     print("M1:")
     m1_group = f.create_group("m1")
-    run_analysis(m1_group, X_m1, Y_m1, T_PI_VALS, DIM_VALS, OFFSET_VALS, NUM_CV_FOLDS, DECODING_WINDOW)
+    m1_group.attrs["timestep"] = 50
+    m1_group.attrs["timestep_units"] = "ms"
+    run_analysis(m1_group, X_m1, Y_m1, T_PI_VALS, [d for d in DIM_VALS if d < X_m1.shape[1]], OFFSET_VALS, NUM_CV_FOLDS, DECODING_WINDOW)
 
 

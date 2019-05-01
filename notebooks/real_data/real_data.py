@@ -18,7 +18,7 @@ WEATHER_DATA_FILENMAE = "/home/davidclark/Projects/ComplexityComponentsAnalysis/
 CACHE_FILENAME = "data_cache_50ms_bins.pickle"
 
 #set results file directory
-RESULTS_DIR = "decode_results/"
+RESULTS_DIR = ""
 
 #set analysis params
 T_PI_VALS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]

@@ -28,14 +28,17 @@ def make_norm_power(X, T_ent):
 
 def ent_loss_fn(X, proj, T_ent):
     """Power spectrum entropy loss function."""
+    if not isinstance(X, torch.Tensor):
+        X = torch.Tensor(X)
+    if not isinstance(proj, torch.Tensor):
+        proj = torch.Tensor(proj)
     Xp = X.mm(proj)
     Xp_tensor = Xp.t()
     Xp_tensor = torch.unsqueeze(Xp_tensor, -1)
     Xp_tensor = torch.unsqueeze(Xp_tensor, 1)
     YP = make_norm_power(Xp_tensor, T_ent)
     ent = -(YP * torch.log(YP)).sum(dim=1)
-    print(ent)
-    return ent.mean()
+    return ent.sum()
 
 class ForcastableComponentsAnalysis(object):
     """Forcastable Components Analysis.
@@ -159,8 +162,8 @@ class ForcastableComponentsAnalysis(object):
         self.fit(X, d=d, T=T, regularization=regularization, reg_ops=reg_ops)
         return self.transform(X)
 
-    def score(self):
-        return calc_pi_from_cross_cov_mats(self.cross_covs, self.coef_)
+    def score(self, X):
+        return ent_loss_fn(X, self.coef_, self.T)
 
 
 class knnComplexityComponentsAnalysis(object):

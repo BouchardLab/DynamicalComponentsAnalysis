@@ -339,7 +339,7 @@ def block_dot_B(A, B, n_blocks, out=None):
     return out
 
 def block_dot_AB(A, B, n_blocks, out=None):
-    """Computes np.dot(A, B) when B is block diagonal.
+    """Computes np.dot(A, B) when A and B is block diagonal.
     """
     blocks_r = A.shape[0] // n_blocks
     blocks_c = A.shape[1] // n_blocks
@@ -448,7 +448,7 @@ class GaussianProcessFactorAnalysis(object):
         converged = False
         for ii in range(self.max_iter):
             ll = self._em_iter(y, big_K, big_C, big_R)
-            if abs(ll - ll_pre) / np.amax([ll, ll_pre, 1.]) <= self.tol:
+            if abs(ll - ll_pre) / np.amax([abs(ll), abs(ll_pre), 1.]) <= self.tol:
                 converged = True
                 break
             ll_pre = ll
@@ -646,7 +646,7 @@ class GaussianProcessFactorAnalysis(object):
             x = x[0].reshape(T, self.n_factors)
         else:
             x = self._E_mean([yi - self.mean_ for yi in y])[0]
-            x = [xi.reshape(yi.shape[1], self.n_factors) for xi, yi in zip(x, y)]
+            x = [xi.reshape(yi.shape[0], self.n_factors) for xi, yi in zip(x, y)]
         return x
 
 

@@ -138,7 +138,7 @@ def sample_gp(T, N, kernel, num_to_concat=1):
     sample = sample.reshape(T*num_to_concat, N)
     return sample
 
-def embed_gp(T, N, d, kernel, noise_cov, T_pi, num_to_concat=1):
+def embed_gp(T, N, d, kernel, noise_cov, T_pi=None, num_to_concat=1):
     """Embed a d-dimensional Gaussian process into N-dimensional space, then
     add (potentially) spatially structured white noise.
     ----------
@@ -175,7 +175,7 @@ def embed_gp(T, N, d, kernel, noise_cov, T_pi, num_to_concat=1):
 
     #Compute the PI of the high-dimensional, noisy process
     cov_low_d = gen_gp_cov(T=2*T_pi, N=d, kernel=kernel)
-    low_d_cross_cov_mats = calc_cross_cov_mats_from_cov(N=d, num_lags=2*T_pi, cov=cov_low_d)
+    low_d_cross_cov_mats = calc_cross_cov_mats_from_cov(cov_low_d, 2*T_pi, d)
     high_d_cross_cov_mats = np.array([np.dot(U, np.dot(C, U.T)) for C in low_d_cross_cov_mats])
     high_d_cross_cov_mats[0] += noise_cov
     cov_high_d = calc_cov_from_cross_cov_mats(high_d_cross_cov_mats)
@@ -185,7 +185,7 @@ def embed_gp(T, N, d, kernel, noise_cov, T_pi, num_to_concat=1):
     cov_embedding = calc_cov_from_cross_cov_mats(embedding_cross_cov_mats)
     embedding_pi = calc_pi_from_cov(cov_embedding)
 
-    return X, U , full_pi, embedding_pi, high_d_cross_cov_mats
+    return X, Y, U, full_pi, embedding_pi, high_d_cross_cov_mats
 
 
 def gen_lorenz_system(T, integration_dt, data_dt):

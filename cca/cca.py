@@ -219,9 +219,9 @@ class ComplexityComponentsAnalysis(object):
 
     def transform(self, X):
         if isinstance(X, list):
-            y = [(Xi - X.mean(axis=0, keepdims=True)).dot(self.coef_) for Xi in X]
+            y = [(Xi - Xi.mean(axis=0, keepdims=True)).dot(self.coef_) for Xi in X]
         elif X.ndim == 3:
-            y = np.stack([(Xi - X.mean(axis=0, keepdims=True)).dot(self.coef_) for Xi in X])
+            y = np.stack([(Xi - Xi.mean(axis=0, keepdims=True)).dot(self.coef_) for Xi in X])
         else:
             y = (X - X.mean(axis=0, keepdims=True)).dot(self.coef_)
         return y

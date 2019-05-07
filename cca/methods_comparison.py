@@ -313,43 +313,39 @@ def make_block_diag(M, num_reps, out=None):
     return big_M
 
 def block_dot_A(A, B, n_blocks, out=None):
-    """Computes np.dot(A, B) when A is block diagonal.
+    """Computes np.dot(make_block_diag(A, n_blocks), B).
     """
-    blocks_r = A.shape[0] // n_blocks
-    blocks_c = A.shape[1] // n_blocks
+    block_r = A.shape[0]
+    block_c = A.shape[1]
     if out is None:
-        out = np.empty((A.shape[0], B.shape[1]), dtype=A.dtype)
+        out = np.empty((block_r * n_blocks, B.shape[1]), dtype=A.dtype)
     for ii in range(n_blocks):
-        Ai = A[ii*blocks_r:(ii+1)*blocks_r, ii*blocks_c:(ii+1)*blocks_c]
-        Bi = B[ii*blocks_c:(ii+1)*blocks_c]
-        out[ii*blocks_r:(ii+1)*blocks_r] = Ai.dot(Bi)
+        Bi = B[ii*block_c:(ii+1)*block_c]
+        out[ii*block_r:(ii+1)*block_r] = A.dot(Bi)
     return out
 
 def block_dot_B(A, B, n_blocks, out=None):
-    """Computes np.dot(A, B) when B is block diagonal.
+    """Computes np.dot(A, make_block_diag(B, n_blocks)).
     """
-    blocks_r = B.shape[0] // n_blocks
-    blocks_c = B.shape[1] // n_blocks
+    block_r = B.shape[0]
+    block_c = B.shape[1]
     if out is None:
-        out = np.empty((A.shape[0], B.shape[1]), dtype=A.dtype)
+        out = np.empty((A.shape[0], block_c * n_blocks), dtype=A.dtype)
     for ii in range(n_blocks):
-        Ai = A[:, ii*blocks_r:(ii+1)*blocks_r]
-        Bi = B[ii*blocks_r:(ii+1)*blocks_r, ii*blocks_c:(ii+1)*blocks_c]
-        out[:, ii*blocks_c:(ii+1)*blocks_c] = Ai.dot(Bi)
+        Ai = A[:, ii*block_r:(ii+1)*block_r]
+        out[:, ii*block_c:(ii+1)*block_c] = Ai.dot(B)
     return out
 
 def block_dot_AB(A, B, n_blocks, out=None):
     """Computes np.dot(A, B) when A and B is block diagonal.
     """
-    blocks_r = A.shape[0] // n_blocks
-    blocks_c = A.shape[1] // n_blocks
-    blocks_c2 = B.shape[1] // n_blocks
+    block_r = A.shape[0]
+    block_c = A.shape[1]
+    block_c2 = B.shape[1]
     if out is None:
-        out = np.zeros((A.shape[0], B.shape[1]), dtype=A.dtype)
+        out = np.zeros((block_r * n_blocks, block_c2 * n_blocks), dtype=A.dtype)
     for ii in range(n_blocks):
-        Ai = A[ii*blocks_r:(ii+1)*blocks_r, ii*blocks_c:(ii+1)*blocks_c]
-        Bi = B[ii*blocks_c:(ii+1)*blocks_c, ii*blocks_c2:(ii+1)*blocks_c2]
-        out[ii*blocks_r:(ii+1)*blocks_r, ii*blocks_c2:(ii+1)*blocks_c2] = Ai.dot(Bi)
+        out[ii*block_r:(ii+1)*block_r, ii*block_c2:(ii+1)*block_c2] = A.dot(B)
     return out
 
 def matrix_inversion_identity(R_inv, K, C, T):
@@ -361,9 +357,10 @@ def matrix_inversion_identity(R_inv, K, C, T):
     R_inv and C must be block diagonal.
     """
     K_inv = np.linalg.inv(K)
-    sub = K_inv + block_dot_AB(C.T, block_dot_AB(R_inv, C, T), T)
-    R_invC = R_inv.dot(C)
-    return R_inv - R_invC.dot(np.linalg.solve(sub, R_invC.T))
+    R_invC = np.dot(R_inv, C)
+    sub = K_inv + block_dot_AB(C.T, R_invC, T)
+    term1 = block_dot_A(R_invC, np.linalg.solve(sub, make_block_diag(R_invC.T, T)), T)
+    return make_block_diag(R_inv, T) -  term1
 
 def log_likelihood(mu, sigma, y):
     """Log likelihood for a multivariate normal distribution.
@@ -434,11 +431,11 @@ class GaussianProcessFactorAnalysis(object):
         self.d_ =  np.zeros(n)
         self.tau_ = self.tau_init + self.rng.rand(self.n_factors)
         # Allocated and reuse these
+        C = self.C_
+        R = self.R_
         big_K = [calc_big_K(Ti, self.n_factors, self.tau_, self.var_n) for Ti in T]
-        big_C = [make_block_diag(self.C_, Ti) for Ti in T]
-        big_R = [make_block_diag(self.R_, Ti) for Ti in T]
-        y_cov = [block_dot_B(block_dot_A(big_Ci, big_Ki, Ti), big_Ci.T, Ti) + big_Ri
-                 for big_Ci, big_Ki, Ti, big_Ri in zip(big_C, big_K, T, big_R)]
+        y_cov = [block_dot_B(block_dot_A(C, big_Ki, Ti), C.T, Ti) + make_block_diag(R, Ti)
+                 for big_Ki, Ti in zip(big_K, T)]
         big_d = [np.tile(self.d_, Ti) for Ti in T]
         big_y = [yi.ravel() for yi in y]
         ll_pre = log_likelihood(big_d, y_cov, big_y)
@@ -447,7 +444,7 @@ class GaussianProcessFactorAnalysis(object):
 
         converged = False
         for ii in range(self.max_iter):
-            ll = self._em_iter(y, big_K, big_C, big_R)
+            ll = self._em_iter(y, big_K)
             if abs(ll - ll_pre) / np.amax([abs(ll), abs(ll_pre), 1.]) <= self.tol:
                 converged = True
                 break
@@ -456,7 +453,7 @@ class GaussianProcessFactorAnalysis(object):
             warnings.warn("EM max_iter reached.", ConvergenceWarning)
         return self
 
-    def _em_iter(self, y, big_K, big_C, big_R):
+    def _em_iter(self, y, big_K):
         """One step of EM.
 
         Exact updates for d, C, and R. Optimization for tau
@@ -469,12 +466,14 @@ class GaussianProcessFactorAnalysis(object):
         T = [yi.shape[0] for yi in y]
         big_d = [np.tile(self.d_, Ti) for Ti in T]
         big_y = [yi.ravel() for yi in y]
+        C = self.C_
+        R = self.R_
 
-        mean, big_K, big_C, big_R, big_dy, KCt, KCt_CKCtR_inv = self._E_mean(y)
+        mean, big_K, big_dy, KCt, KCt_CKCtR_inv = self._E_mean(y)
         cov = [big_Ki - KCt_CKCtR_invi.dot(KCti.T)
                for big_Ki, KCt_CKCtR_invi, KCti in zip(big_K, KCt_CKCtR_inv, KCt)]
-        y_cov = [block_dot_A(big_Ci, KCti, Ti) + big_Ri
-                 for big_Ci, KCti, Ti, big_Ri in zip(big_C, KCt, T, big_R)]
+        y_cov = [block_dot_A(C, KCti, Ti) + make_block_diag(R, Ti)
+                 for KCti, Ti in zip(KCt, T)]
 
         if self.verbose == 2:
             #Compute log likelihood under current params
@@ -528,12 +527,14 @@ class GaussianProcessFactorAnalysis(object):
         T = [yi.shape[0] for yi in y]
         big_d = [np.tile(self.d_, Ti) for Ti in T]
         big_y = [yi.ravel() for yi in y]
+        C = self.C_
+        R = self.R_
 
-        mean, big_K, big_C, big_R, big_dy, KCt, KCt_CKCtR_inv = self._E_mean(y)
+        mean, big_K, big_dy, KCt, KCt_CKCtR_inv = self._E_mean(y)
         cov = [big_Ki - KCt_CKCtR_invi.dot(KCti.T)
                for big_Ki, KCt_CKCtR_invi, KCti in zip(big_K, KCt_CKCtR_inv, KCt)]
-        y_cov = [block_dot_A(big_Ci, KCti, Ti) + big_Ri
-                 for big_Ci, KCti, Ti, big_Ri in zip(big_C, KCt, T, big_R)]
+        y_cov = [block_dot_A(C, KCti, Ti) + make_block_diag(R, Ti)
+                 for KCti, Ti in zip(KCt, T)]
         return log_likelihood(big_d, y_cov, big_y)
 
     def score(self, y):
@@ -592,7 +593,7 @@ class GaussianProcessFactorAnalysis(object):
         opt_tau = np.exp(opt_result.x)
         return opt_tau
 
-    def _E_mean(self, y, big_K=None, big_C=None, big_R=None):
+    def _E_mean(self, y, big_K=None):
         """Infer the mean of the latent variables x given obervations y.
 
         Parameters
@@ -607,27 +608,22 @@ class GaussianProcessFactorAnalysis(object):
         T = [yi.shape[0] for yi in y]
         big_d = [np.tile(self.d_, Ti) for Ti in T]
         big_y = [yi.ravel() for yi in y]
+        C = self.C_
+        R = self.R_
         if big_K is None:
             big_K = [None] * len(T)
-        if big_C is None:
-            big_C = [None] * len(T)
-        if big_R is None:
-            big_R = [None] * len(T)
 
         big_K = [calc_big_K(Ti, self.n_factors, self.tau_, self.var_n, big_Ki)
                  for Ti, big_Ki in zip(T, big_K)]
-        big_C = [make_block_diag(self.C_, Ti, big_Ci) for Ti, big_Ci in zip(T, big_C)]
-        big_R = [make_block_diag(self.R_, Ti, big_Ri) for Ti, big_Ri in zip(T, big_R)]
         R_inv = np.linalg.inv(self.R_)
-        big_R_inv = [make_block_diag(R_inv, Ti) for Ti in T]
         big_dy = [big_yi - big_di  for big_yi, big_di in zip(big_y, big_d)]
-        KCt = [block_dot_B(big_Ki, big_Ci.T, Ti)
-               for big_Ki, big_Ci, Ti in zip(big_K, big_C, T)]
+        KCt = [block_dot_B(big_Ki, C.T, Ti)
+               for big_Ki, Ti in zip(big_K, T)]
 
-        KCt_CKCtR_inv = [KCti.dot(matrix_inversion_identity(big_R_invi, big_Ki, big_Ci, Ti))
-                         for KCti, big_R_invi, big_Ki, big_Ci, Ti in zip(KCt, big_R_inv, big_K, big_C, T)]
+        KCt_CKCtR_inv = [KCti.dot(matrix_inversion_identity(R_inv, big_Ki, C, Ti))
+                         for KCti, big_Ki, Ti in zip(KCt, big_K, T)]
         mean = [KCt_CKCtR_invi.dot(big_dyi) for KCt_CKCtR_invi, big_dyi in zip(KCt_CKCtR_inv, big_dy)]
-        return mean, big_K, big_C, big_R, big_dy, KCt, KCt_CKCtR_inv
+        return mean, big_K, big_dy, KCt, KCt_CKCtR_inv
 
     def transform(self, y):
         """Infer the mean of the latent variables x given obervations y.

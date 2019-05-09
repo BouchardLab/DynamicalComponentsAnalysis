@@ -1,5 +1,5 @@
-ticklabel_fontsize = 8
-axis_label_fontsize = 10
-title_fontsize = 12
-panel_letter_fontstyle = {'fontsize': 14,
+ticklabel_fontsize = 6
+axis_label_fontsize = 8
+title_fontsize = 10
+panel_letter_fontstyle = {'fontsize': 12,
                           'weight': 'bold'}

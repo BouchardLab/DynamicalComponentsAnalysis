@@ -316,7 +316,7 @@ def embedded_lorenz_cross_cov_mats(N, T=10, snr=1., num_lorenz_samples=10000, nu
     dynamics_var = np.max(scipy.linalg.eigvalsh(np.cov(X_dynamics.T)))
     #Generate dynamics embedding matrix (will remain fixed)
     np.random.seed(42)
-    V_dynamics = random_basis(N, 3)
+    V_dynamics = np.eye(N)[:, :3] #random_basis(N, 3)
     X = np.dot(X_dynamics, V_dynamics.T)
     #Generate a subspace with median principal angles w.r.t. dynamics subspace
     noise_dim = 3

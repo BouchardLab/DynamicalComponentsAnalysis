@@ -1,8 +1,10 @@
 import numpy as np
 import scipy as sp
+import collections
 import torch
 
 from .data_util import form_lag_matrix
+from sklearn.utils.extmath import randomized_svd
 
 def rectify_spectrum(cov, epsilon=1e-6, verbose=False):
     min_eig = np.min(sp.linalg.eigvalsh(cov))
@@ -50,15 +52,20 @@ def calc_cross_cov_mats_from_data(X, T, regularization=None, reg_ops=None):
         Cross-covariance matrices. cross_cov_mats[dt] is the cross-covariance between
         X(t) and X(t+dt), where X(t) is an N-dimensional vector.
     """
-
-    #mean center X
-    X = X - X.mean(axis=0)
-    _, N = X.shape
-
     if reg_ops is None:
         reg_ops = dict()
     stride = reg_ops.get('stride', 1)
-    X_with_lags = form_lag_matrix(X, T, stride=stride)
+
+        #mean center X
+    if isinstance(X, list) or X.ndim == 3:
+        mean = np.concatenate(X).mean(axis=0, keepdims=True)
+        X = [Xi - mean for Xi in X]
+        N = X[0].shape[-1]
+        X_with_lags = np.concatenate([form_lag_matrix(Xi, T, stride=stride) for Xi in X])
+    else:
+        X = X - X.mean(axis=0, keepdims=True)
+        N = X.shape[-1]
+        X_with_lags = form_lag_matrix(X, T, stride=stride)
 
     if regularization is None:
         cov_est = np.cov(X_with_lags, rowvar=False)

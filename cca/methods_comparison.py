@@ -28,14 +28,17 @@ def make_norm_power(X, T_ent):
 
 def ent_loss_fn(X, proj, T_ent):
     """Power spectrum entropy loss function."""
+    if not isinstance(X, torch.Tensor):
+        X = torch.Tensor(X)
+    if not isinstance(proj, torch.Tensor):
+        proj = torch.Tensor(proj)
     Xp = X.mm(proj)
     Xp_tensor = Xp.t()
     Xp_tensor = torch.unsqueeze(Xp_tensor, -1)
     Xp_tensor = torch.unsqueeze(Xp_tensor, 1)
     YP = make_norm_power(Xp_tensor, T_ent)
     ent = -(YP * torch.log(YP)).sum(dim=1)
-    print(ent)
-    return ent.mean()
+    return ent.sum()
 
 class ForcastableComponentsAnalysis(object):
     """Forcastable Components Analysis.
@@ -159,8 +162,8 @@ class ForcastableComponentsAnalysis(object):
         self.fit(X, d=d, T=T, regularization=regularization, reg_ops=reg_ops)
         return self.transform(X)
 
-    def score(self):
-        return calc_pi_from_cross_cov_mats(self.cross_covs, self.coef_)
+    def score(self, X):
+        return ent_loss_fn(X, self.coef_, self.T)
 
 
 class knnComplexityComponentsAnalysis(object):
@@ -309,19 +312,71 @@ def make_block_diag(M, num_reps, out=None):
         big_M[i*M.shape[0]:(i+1)*M.shape[0], i*M.shape[1]:(i+1)*M.shape[1]] = M
     return big_M
 
+def block_dot_A(A, B, n_blocks, out=None):
+    """Computes np.dot(make_block_diag(A, n_blocks), B).
+    """
+    block_r = A.shape[0]
+    block_c = A.shape[1]
+    if out is None:
+        out = np.empty((block_r * n_blocks, B.shape[1]), dtype=A.dtype)
+    for ii in range(n_blocks):
+        Bi = B[ii*block_c:(ii+1)*block_c]
+        out[ii*block_r:(ii+1)*block_r] = A.dot(Bi)
+    return out
+
+def block_dot_B(A, B, n_blocks, out=None):
+    """Computes np.dot(A, make_block_diag(B, n_blocks)).
+    """
+    block_r = B.shape[0]
+    block_c = B.shape[1]
+    if out is None:
+        out = np.empty((A.shape[0], block_c * n_blocks), dtype=A.dtype)
+    for ii in range(n_blocks):
+        Ai = A[:, ii*block_r:(ii+1)*block_r]
+        out[:, ii*block_c:(ii+1)*block_c] = Ai.dot(B)
+    return out
+
+def block_dot_AB(A, B, n_blocks, out=None):
+    """Computes np.dot(A, B) when A and B is block diagonal.
+    """
+    block_r = A.shape[0]
+    block_c = A.shape[1]
+    block_c2 = B.shape[1]
+    if out is None:
+        out = np.zeros((block_r * n_blocks, block_c2 * n_blocks), dtype=A.dtype)
+    for ii in range(n_blocks):
+        out[ii*block_r:(ii+1)*block_r, ii*block_c2:(ii+1)*block_c2] = A.dot(B)
+    return out
+
+def matrix_inversion_identity(R_inv, K, C, T):
+    """Computes (R + CKC^T)^{-1} using the matrix inversion identity as
+    R^{-1} - R^{-1}C(K^{-1} + C^TR^{-1}C)^{-1}C^TR^{-1}
+    Useful when dim(R) > dim(K) and R^{inv} can be easily computed or has been
+    previously computed.
+
+    R_inv and C must be block diagonal.
+    """
+    K_inv = np.linalg.inv(K)
+    R_invC = np.dot(R_inv, C)
+    sub = K_inv + block_dot_AB(C.T, R_invC, T)
+    term1 = block_dot_A(R_invC, np.linalg.solve(sub, make_block_diag(R_invC.T, T)), T)
+    return make_block_diag(R_inv, T) -  term1
+
 def log_likelihood(mu, sigma, y):
     """Log likelihood for a multivariate normal distribution.
 
     Only works for 1 sample data.
     """
-    d = y.size
-    log_det_cov = np.linalg.slogdet(sigma)[1]
-    y_minus_mean = y - mu
-    term3 = np.dot(y_minus_mean.T.ravel(),
-                   np.linalg.solve(sigma, y_minus_mean.T).ravel())
-    log_likelihood = (-0.5*d*np.log(2*np.pi)
-                      - 0.5*log_det_cov
-                      - 0.5*term3)
+    log_likelihood = 0.
+    for mui, sigmai, yi in zip(mu, sigma, y):
+        d = yi.size
+        log_det_cov = np.linalg.slogdet(sigmai)[1]
+        y_minus_mean = yi - mui
+        term3 = np.dot(y_minus_mean.T.ravel(),
+                       np.linalg.solve(sigmai, y_minus_mean.T).ravel())
+        log_likelihood += (-0.5*d*np.log(2*np.pi)
+                           - 0.5*log_det_cov
+                           - 0.5*term3)
     return log_likelihood
 
 
@@ -361,30 +416,36 @@ class GaussianProcessFactorAnalysis(object):
         ----------
         y : ndarray (time, features)
         """
-        self.mean_ = y.mean(axis=0, keepdims=True)
-        y = y - self.mean_
-        T, n = y.shape
+        if isinstance(y, np.ndarray) and y.ndim == 2:
+            y = [y]
+        y_all = np.concatenate(y)
+        self.mean_ = y_all.mean(axis=0, keepdims=True)
+        y = [yi - self.mean_ for yi in y]
+        n = y[0].shape[1]
+        T = [yi.shape[0] for yi in y]
         model = FA(self.n_factors, svd_method='lapack')
-        model.fit(y)
+        model.fit(y_all)
+
         self.R_ = np.diag(model.noise_variance_)
         self.C_ = model.components_.T
         self.d_ =  np.zeros(n)
         self.tau_ = self.tau_init + self.rng.rand(self.n_factors)
         # Allocated and reuse these
-        big_K = calc_big_K(T, self.n_factors, self.tau_, self.var_n)
-        big_C = make_block_diag(self.C_, T)
-        big_R = make_block_diag(self.R_, T)
-        y_cov = big_C.dot(big_K).dot(big_C.T) + big_R
-        big_d = np.tile(self.d_, T)
-        big_y = y.ravel()
+        C = self.C_
+        R = self.R_
+        big_K = [calc_big_K(Ti, self.n_factors, self.tau_, self.var_n) for Ti in T]
+        y_cov = [block_dot_B(block_dot_A(C, big_Ki, Ti), C.T, Ti) + make_block_diag(R, Ti)
+                 for big_Ki, Ti in zip(big_K, T)]
+        big_d = [np.tile(self.d_, Ti) for Ti in T]
+        big_y = [yi.ravel() for yi in y]
         ll_pre = log_likelihood(big_d, y_cov, big_y)
         if self.verbose:
             print("FA log likelihood:", ll_pre)
 
         converged = False
         for ii in range(self.max_iter):
-            ll = self._em_iter(y, big_K, big_C, big_R)
-            if abs(ll - ll_pre) / np.amax([ll, ll_pre, 1.]) <= self.tol:
+            ll = self._em_iter(y, big_K)
+            if abs(ll - ll_pre) / np.amax([abs(ll), abs(ll_pre), 1.]) <= self.tol:
                 converged = True
                 break
             ll_pre = ll
@@ -392,7 +453,7 @@ class GaussianProcessFactorAnalysis(object):
             warnings.warn("EM max_iter reached.", ConvergenceWarning)
         return self
 
-    def _em_iter(self, y, big_K, big_C, big_R):
+    def _em_iter(self, y, big_K):
         """One step of EM.
 
         Exact updates for d, C, and R. Optimization for tau
@@ -401,29 +462,37 @@ class GaussianProcessFactorAnalysis(object):
         ----------
         y : ndarray (time, features)
         """
-        T, n = y.shape
-        big_y = y.ravel()
-        big_d = np.tile(self.d_, T)
-        mean, big_K, big_C, big_R, big_dy, KCt, KCt_CKCtR_inv = self._E_mean(y)
-        cov = big_K - KCt_CKCtR_inv.dot(KCt.T)
-        y_cov = big_C.dot(KCt) + big_R
+        n = y[0].shape[1]
+        T = [yi.shape[0] for yi in y]
+        big_d = [np.tile(self.d_, Ti) for Ti in T]
+        big_y = [yi.ravel() for yi in y]
+        C = self.C_
+        R = self.R_
+
+        mean, big_K, big_dy, KCt, KCt_CKCtR_inv = self._E_mean(y)
+        cov = [big_Ki - KCt_CKCtR_invi.dot(KCti.T)
+               for big_Ki, KCt_CKCtR_invi, KCti in zip(big_K, KCt_CKCtR_inv, KCt)]
+        y_cov = [block_dot_A(C, KCti, Ti) + make_block_diag(R, Ti)
+                 for KCti, Ti in zip(KCt, T)]
 
         if self.verbose == 2:
             #Compute log likelihood under current params
             ll = log_likelihood(big_d, y_cov, big_y)
             print("Pre update log likelihood:", ll)
 
-        x = mean.reshape(T, -1)
-        big_xxp = cov + np.outer(mean, mean)
+        x = [meani.reshape(Ti, -1) for meani, Ti in zip(mean, T)]
+        big_xxp = [covi + np.outer(meani, meani) for covi, meani in zip(cov, mean)]
         nf = self.n_factors
         xxp = np.zeros((nf + 1, nf + 1))
-        for t in range(T):
-            sl = slice(t * nf, (t + 1) * nf)
-            xxp[:nf, :nf] += big_xxp[sl, sl]
-        xxp[-1, -1] = T
-        xxp[:-1, -1] = x.sum(axis=0)
-        xxp[-1, :-1] = x.sum(axis=0)
-        yx = y.T.dot(np.concatenate((x, np.ones((T, 1))), axis=1))
+        for Ti, big_xxpi in zip(T, big_xxp):
+            for t in range(Ti):
+                sl = slice(t * nf, (t + 1) * nf)
+                xxp[:nf, :nf] += big_xxpi[sl, sl]
+        xxp[-1, -1] = sum(T)
+        sum_x = sum([xi.sum(axis=0) for xi in x])
+        xxp[:-1, -1] = sum_x
+        xxp[-1, :-1] = sum_x
+        yx = sum([yi.T.dot(np.concatenate((xi, np.ones((Ti, 1))), axis=1)) for yi, xi, Ti in zip(y, x, T)])
         Cd = np.linalg.solve(xxp, yx.T).T
         self.C_ = Cd[:, :-1]
         if self.verbose == 2:
@@ -435,8 +504,9 @@ class GaussianProcessFactorAnalysis(object):
             #Compute log likelihood under current params
             ll = self._calc_loglikelihood(y)
             print("d_ update log likelihood:", ll)
-        dy = y - self.d_[np.newaxis]
-        self.R_ = np.diag(np.diag(dy.T.dot(dy) - dy.T.dot(x).dot(self.C_.T))) / T
+        dy = [yi - self.d_[np.newaxis] for yi in y]
+        self.R_ = sum([np.diag(np.diag(dyi.T.dot(dyi) - dyi.T.dot(xi).dot(self.C_.T)))
+                       for dyi, xi in zip(dy, x)]) / sum(T)
         if self.verbose == 2:
             #Compute log likelihood under current params
             ll = self._calc_loglikelihood(y)
@@ -453,15 +523,23 @@ class GaussianProcessFactorAnalysis(object):
         return ll
 
     def _calc_loglikelihood(self, y):
-        T, _ = y.shape
-        big_y = y.ravel()
-        big_d = np.tile(self.d_, T)
-        mean, big_K, big_C, big_R, big_dy, KCt, KCt_CKCtR_inv = self._E_mean(y)
-        cov = big_K - KCt_CKCtR_inv.dot(KCt.T)
-        y_cov = big_C.dot(KCt) + big_R
+        n = y[0].shape[1]
+        T = [yi.shape[0] for yi in y]
+        big_d = [np.tile(self.d_, Ti) for Ti in T]
+        big_y = [yi.ravel() for yi in y]
+        C = self.C_
+        R = self.R_
+
+        mean, big_K, big_dy, KCt, KCt_CKCtR_inv = self._E_mean(y)
+        cov = [big_Ki - KCt_CKCtR_invi.dot(KCti.T)
+               for big_Ki, KCt_CKCtR_invi, KCti in zip(big_K, KCt_CKCtR_inv, KCt)]
+        y_cov = [block_dot_A(C, KCti, Ti) + make_block_diag(R, Ti)
+                 for KCti, Ti in zip(KCt, T)]
         return log_likelihood(big_d, y_cov, big_y)
 
     def score(self, y):
+        if isinstance(y, np.ndarray) and y.ndim == 2:
+            y = [y]
         return self._calc_loglikelihood(y)
 
 
@@ -485,22 +563,27 @@ class GaussianProcessFactorAnalysis(object):
         log_tau_init = np.log(tau_init)
         var_f = 1. - self.var_n
         def f_df(log_tau):
-            K = calc_big_K(T, self.n_factors, np.exp(log_tau), self.var_n)
-            K_inv = np.linalg.inv(K)
-            f = -.5 * (np.sum(K_inv * Sigma_mu_mu_x) +
-                          np.linalg.slogdet(2. * np.pi * K)[1])
+            K = [calc_big_K(Ti, self.n_factors, np.exp(log_tau), self.var_n) for Ti in T]
+            K_inv = [np.linalg.inv(Ki) for Ki in K]
+            f = sum([-.5 * (np.sum(K_invi * Sigma_mu_mu_xi) + np.linalg.slogdet(2. * np.pi * Ki)[1])
+                     for K_invi, Sigma_mu_mu_xi, Ki in zip(K_inv, Sigma_mu_mu_x, K)])
 
             df = np.zeros_like(log_tau)
-            t_vals = np.arange(T)[np.newaxis]
-            delta_t = t_vals - t_vals.T
-            for ii, lti in enumerate(log_tau):
-                idxs = ii + (np.arange(T) * self.n_factors)
-                Ki = K[idxs, :][:, idxs]
-                Ki_inv = np.linalg.inv(Ki)
-                xpx = Sigma_mu_mu_x[idxs, :][:, idxs]
-                dEdKi = .5 *(-Ki_inv + Ki_inv.dot(xpx).dot(Ki_inv))
-                dKidti = var_f * (delta_t**2 / np.exp(lti)**3) * np.exp( - delta_t**2 / (2 * np.exp(lti)**2 ))
-                df[ii] = np.trace( np.dot(dEdKi.T, dKidti) ) * np.exp(lti)
+            t_vals = [np.arange(Ti)[np.newaxis] for Ti in T]
+            delta_t = [t_valsi - t_valsi.T for t_valsi in t_vals]
+            for batch_idx in range(len(T)):
+                Tb = T[batch_idx]
+                Kb = K[batch_idx]
+                Sigma_mu_mu_xb = Sigma_mu_mu_x[batch_idx]
+                delta_tb = delta_t[batch_idx]
+                for ii, lti in enumerate(log_tau):
+                    idxs = ii + (np.arange(Tb) * self.n_factors)
+                    Ki = Kb[idxs, :][:, idxs]
+                    Ki_inv = np.linalg.inv(Ki)
+                    xpx = Sigma_mu_mu_xb[idxs, :][:, idxs]
+                    dEdKi = .5 *(-Ki_inv + Ki_inv.dot(xpx).dot(Ki_inv))
+                    dKidti = var_f * (delta_tb**2 / np.exp(lti)**3) * np.exp(-delta_tb**2 / (2 * np.exp(lti)**2 ))
+                    df[ii] += np.trace( np.dot(dEdKi.T, dKidti) ) * np.exp(lti)
             if self.verbose == 2:
                 print('tau opt', f)
 
@@ -510,7 +593,7 @@ class GaussianProcessFactorAnalysis(object):
         opt_tau = np.exp(opt_result.x)
         return opt_tau
 
-    def _E_mean(self, y, big_K=None, big_C=None, big_R=None):
+    def _E_mean(self, y, big_K=None):
         """Infer the mean of the latent variables x given obervations y.
 
         Parameters
@@ -521,18 +604,26 @@ class GaussianProcessFactorAnalysis(object):
         -------
         x : ndarray (time, n_factors)
         """
-        T, n = y.shape
-        big_y = y.ravel()
-        big_d = np.tile(self.d_, T)
-        big_K = calc_big_K(T, self.n_factors, self.tau_, self.var_n, big_K)
-        big_C = make_block_diag(self.C_, T, big_C)
-        big_R = make_block_diag(self.R_, T, big_R)
-        big_dy = big_y - big_d
-        KCt = big_K.dot(big_C.T)
+        n = y[0].shape[1]
+        T = [yi.shape[0] for yi in y]
+        big_d = [np.tile(self.d_, Ti) for Ti in T]
+        big_y = [yi.ravel() for yi in y]
+        C = self.C_
+        R = self.R_
+        if big_K is None:
+            big_K = [None] * len(T)
 
-        KCt_CKCtR_inv = np.linalg.solve((big_C.dot(KCt) + big_R).T, KCt.T).T
-        mean = KCt_CKCtR_inv.dot(big_dy)
-        return mean, big_K, big_C, big_R, big_dy, KCt, KCt_CKCtR_inv
+        big_K = [calc_big_K(Ti, self.n_factors, self.tau_, self.var_n, big_Ki)
+                 for Ti, big_Ki in zip(T, big_K)]
+        R_inv = np.linalg.inv(self.R_)
+        big_dy = [big_yi - big_di  for big_yi, big_di in zip(big_y, big_d)]
+        KCt = [block_dot_B(big_Ki, C.T, Ti)
+               for big_Ki, Ti in zip(big_K, T)]
+
+        KCt_CKCtR_inv = [KCti.dot(matrix_inversion_identity(R_inv, big_Ki, C, Ti))
+                         for KCti, big_Ki, Ti in zip(KCt, big_K, T)]
+        mean = [KCt_CKCtR_invi.dot(big_dyi) for KCt_CKCtR_invi, big_dyi in zip(KCt_CKCtR_inv, big_dy)]
+        return mean, big_K, big_dy, KCt, KCt_CKCtR_inv
 
     def transform(self, y):
         """Infer the mean of the latent variables x given obervations y.
@@ -545,9 +636,14 @@ class GaussianProcessFactorAnalysis(object):
         -------
         x : ndarray (time, n_factors)
         """
-        T, n = y.shape
-        x, _, _, _, _, _, _ = self._E_mean(y - self.mean_)
-        return x.reshape(T, self.n_factors)
+        if isinstance(y, np.ndarray) and y.ndim == 2:
+            T, n = y.shape
+            x = self._E_mean([y - self.mean_])[0]
+            x = x[0].reshape(T, self.n_factors)
+        else:
+            x = self._E_mean([yi - self.mean_ for yi in y])[0]
+            x = [xi.reshape(yi.shape[0], self.n_factors) for xi, yi in zip(x, y)]
+        return x
 
 
 class SlowFeatureAnalysis(object):

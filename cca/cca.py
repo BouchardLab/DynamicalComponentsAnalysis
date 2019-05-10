@@ -100,14 +100,14 @@ class ComplexityComponentsAnalysis(object):
         self.use_scipy = use_scipy
 
     def estimate_cross_covariance(self, X, T=None, regularization=None, reg_ops=None):
-        self.mean_ = X.mean(axis=0, keepdims=True)
-        X -= self.mean_
         if T is None:
             T = self.T
         else:
             self.T = T
 
-        cross_covs = calc_cross_cov_mats_from_data(X, 2*self.T, regularization=regularization, reg_ops=reg_ops)
+        cross_covs = calc_cross_cov_mats_from_data(X, 2*self.T,
+                                                   regularization=regularization,
+                                                   reg_ops=reg_ops)
         self.cross_covs = torch.tensor(cross_covs, device=self.device, dtype=self.dtype)
 
         return self
@@ -218,7 +218,13 @@ class ComplexityComponentsAnalysis(object):
         return self
 
     def transform(self, X):
-        return (X - self.mean_).dot(self.coef_)
+        if isinstance(X, list):
+            y = [(Xi - Xi.mean(axis=0, keepdims=True)).dot(self.coef_) for Xi in X]
+        elif X.ndim == 3:
+            y = np.stack([(Xi - Xi.mean(axis=0, keepdims=True)).dot(self.coef_) for Xi in X])
+        else:
+            y = (X - X.mean(axis=0, keepdims=True)).dot(self.coef_)
+        return y
 
     def fit_transform(self, X, d=None, T=None, regularization=None,
                       reg_ops=None):
@@ -249,10 +255,13 @@ def make_cepts2(X, T_pi):
     cepts = torch.sqrt(cepts[:, :, 0]**2 + cepts[:, :, 1]**2)
     return cepts**2
 
-def pi_fft_loss_fn(X, T_pi):
+def pi_fft_loss_fn(X, proj, T_pi):
     """Power spectrum entropy loss function."""
     if not isinstance(X, torch.Tensor):
         X = torch.Tensor(X)
+    if not isinstance(proj, torch.Tensor):
+        proj = torch.Tensor(proj)
+    X = torch.mm(X, proj)
     Xp_tensor = X.t()
     Xp_tensor = torch.unsqueeze(Xp_tensor, -1)
     Xp_tensor = torch.unsqueeze(Xp_tensor, 1)

@@ -1,8 +1,10 @@
 import numpy as np
 import scipy
 import h5py
+from scipy.linalg import expm
+from numpy.linalg import matrix_power 
 
-from .cov_util import calc_cov_from_cross_cov_mats, calc_cross_cov_mats_from_cov, calc_pi_from_cov
+from .cov_util import calc_cov_from_cross_cov_mats, calc_cross_cov_mats_from_cov, calc_cross_cov_mats_from_data, calc_pi_from_cov
 from .data_util import sum_over_chunks
 
 def gen_gp_cov(kernel, T, N):
@@ -188,8 +190,8 @@ def embed_gp(T, N, d, kernel, noise_cov, T_pi=None, num_to_concat=1):
     return X, Y, U, full_pi, embedding_pi, high_d_cross_cov_mats
 
 
-def gen_lorenz_system(T, integration_dt, data_dt):
-    #Period ~ 1 unit of time
+def gen_lorenz_system(T, integration_dt=0.005, data_dt=0.025):
+    #Period ~ 1 unit of time (total time is T)
     #So make sure integration_dt << 1
 
     #Known-to-be-good chaotic parameters
@@ -214,6 +216,7 @@ def gen_lorenz_system(T, integration_dt, data_dt):
 
     return X_downsampled
 
+""" 
 def embed_lorenz_system(T, integration_dt, data_dt, N, noise_cov):
 
     #Latent dynamics
@@ -233,6 +236,104 @@ def embed_lorenz_system(T, integration_dt, data_dt, N, noise_cov):
     X += np.random.multivariate_normal(mean=np.zeros(N), cov=noise_cov, size=len(X))
 
     return X
+"""
+
+def oscillators_dynamics_mat(N=10, omega_sq=.1, alpha_sq=.2, gamma=.05, tau=1.):
+    #spring matrix K
+    K = np.zeros((N, N))
+    K += np.eye(N) * (0.5*omega_sq + alpha_sq)
+    K[1:, :-1] += np.eye(N-1) * (-0.5*alpha_sq) #lower diag
+    K[:-1, 1:] += np.eye(N-1) * (-0.5*alpha_sq) #upper diag
+    K[0, -1] = -0.5*alpha_sq
+    K[-1, 0] = -0.5*alpha_sq
+    #friction matrix gamma
+    gamma_mat = gamma * np.eye(N)
+    #continuous-time dynamics matrix B (z^dot = B * z)
+    B_top = np.concatenate((np.zeros((N, N)), np.eye(N)), axis=1)
+    B_bottom = np.concatenate((-K, -gamma_mat), axis=1)
+    B = np.concatenate((B_top, B_bottom), axis=0)
+    #discrete-time dynamics matrix A (z_t = A * z_{t-1})
+    A = expm(B * tau)
+    return A
+
+def oscillators_cross_cov_mats(A, T=10, sigma=1.):
+    #get N
+    N = A.shape[0] // 2
+    #noise matrix sigma (just position noise)
+    sigma_mat = np.zeros((2*N, 2*N))
+    sigma_mat[:N, :N] = np.eye(N) * sigma**2
+    #steady-state covariance matrix C
+    C = np.ones(2*N)
+    for i in range(100000):
+        C = A.dot(C).dot(A.T) + sigma_mat
+    #function for generating cross-cov matrices <z_{t+k} z_t^T>
+    def gen_cross_cov(k):
+        A_k = matrix_power(A, k)
+        A_k_C = A_k.dot(C)
+        return A_k_C
+    #make all cross_cov mats for delta t = {0, .., T-1}
+    cross_cov_mats = np.array([gen_cross_cov(k) for k in range(T)])
+    return cross_cov_mats
+
+def sample_oscillators(A, T, sigma=1.):
+    #generate sample of dynamics
+    N = A.shape[0] // 2
+    z = np.zeros((T, 2*N))
+    for i in range(1, T):
+        z[i] = np.dot(A, z[i - 1])
+        z[i, :N] += np.random.normal(0, sigma, N) #only position noise
+    return z
+
+def gen_noise_cov(N, D, var, V_noise=None):
+    noise_spectrum = var*np.exp(-2*np.arange(N)/D)
+    if V_noise is None:
+        V_noise = scipy.stats.ortho_group.rvs(N)
+    noise_cov = np.dot(V_noise, np.dot(np.diag(noise_spectrum), V_noise.T))
+    return noise_cov
+
+def random_basis(N, D):
+    return scipy.stats.ortho_group.rvs(N)[:, :D]
+
+def median_subspace(N, D, num_samples=5000, V_0=None):
+    subspaces = np.zeros((num_samples, N, D))
+    angles = np.zeros((num_samples, min(D, V_0.shape[1])))
+    if V_0 is None:
+        V_0 = np.eye(N)[:, :D]
+    for i in range(num_samples):
+        subspaces[i] = random_basis(N, D)
+        angles[i] = np.rad2deg(scipy.linalg.subspace_angles(V_0, subspaces[i]))
+    median_angles = np.median(angles, axis=0)
+    median_subspace_idx = np.argmin( np.sum((angles-median_angles)**2, axis=1) )
+    median_subspace = subspaces[median_subspace_idx]
+    return median_subspace
+
+def embedded_lorenz_cross_cov_mats(N, T=10, snr=1., num_lorenz_samples=10000, num_subspace_samples=5000):
+    #Generate Lorenz dynamics
+    integration_dt = 0.005
+    data_dt = 0.025
+    X_dynamics = gen_lorenz_system((num_lorenz_samples + 1000)*data_dt, integration_dt, data_dt)[1000:]
+    X_dynamics = (X_dynamics - X_dynamics.mean(axis=0))/X_dynamics.std(axis=0)
+    dynamics_var = np.max(scipy.linalg.eigvalsh(np.cov(X_dynamics.T)))
+    #Generate dynamics embedding matrix (will remain fixed)
+    np.random.seed(42)
+    V_dynamics = random_basis(N, 3)
+    X = np.dot(X_dynamics, V_dynamics.T)
+    #Generate a subspace with median principal angles w.r.t. dynamics subspace
+    noise_dim = 3
+    V_noise = median_subspace(N, noise_dim, num_samples=num_subspace_samples, V_0=V_dynamics)
+    #Extend V_noise to a basis for R^N
+    if noise_dim < N:
+        V_noise_comp = scipy.linalg.orth(np.eye(N) - np.dot(V_noise, V_noise.T))
+        print(V_noise_comp.shape)
+        V_noise = np.concatenate((V_noise, V_noise_comp), axis=1)
+    #Add noise covariacne
+    noise_var = dynamics_var/snr
+    noise_cov = gen_noise_cov(N, noise_dim, noise_var, V_noise=V_noise)
+    cross_cov_mats = calc_cross_cov_mats_from_data(X_dynamics, T)
+    cross_cov_mats = np.array([V_dynamics.dot(C).dot(V_dynamics.T) for C in cross_cov_mats])
+    cross_cov_mats[0] += noise_cov
+    return cross_cov_mats
+
 
 def gen_chaotic_rnn(h5py_file, T, N, dt, tau, gamma, x_0=None, noise_cov=None):
 

@@ -77,6 +77,52 @@ def load_mocap_data(filename, z_score=True):
 	angles = np.array(angles)
 	return angles
 
+
+def load_sabes_data(filename, bin_width_s=0.1, session=None, min_spike_count=1000):
+    f = h5py.File(filename, "r")
+    sessions = list(f.keys())
+    lengths = np.array([f[session]["M1"]["spikes"].shape[0] for session in sessions])
+    if session is None:
+        #use longest session if none is provided
+        session = sessions[np.argsort(lengths)[::-1][0]]
+    X, Y = f[session]["M1"]["spikes"], f[session]["cursor"]
+    chunk_size = int(np.round(bin_width_s / .004)) #4 ms default bin width
+    X, Y = sum_over_chunks(X, chunk_size), sum_over_chunks(Y, chunk_size)/chunk_size
+    X = X[:, np.sum(X, axis=0) > min_spike_count]
+    return X, Y
+
+def load_kording_paper_data(filename, bin_width_s=0.1, min_spike_count=10):
+    file = open(filename, "rb")
+    data = pickle.load(file)
+    X, Y = data[0], data[1]
+    good_X_idx = (1 - (np.isnan(X[:, 0]) + np.isnan(X[:, 1]))).astype(np.bool)
+    good_Y_idx = (1 - (np.isnan(Y[:, 0]) + np.isnan(Y[:, 1]))).astype(np.bool)
+    good_idx = good_X_idx*good_Y_idx
+    X, Y = X[good_idx], Y[good_idx]
+    chunk_size = int(np.round(bin_width_s / 0.05)) #50 ms default bin width
+    X, Y = sum_over_chunks(X, chunk_size), sum_over_chunks(Y, chunk_size)/chunk_size
+    X = X[:, np.sum(X, axis=0) > min_spike_count]
+    return X, Y
+
+def load_weather_data(filename):
+    df = pd.read_csv(filename)
+    df['datetime'] = pd.to_datetime(df['datetime'])
+    df.set_index('datetime', inplace=True)
+    df = df[['Vancouver', 'Portland', 'San Francisco', 'Seattle',
+           'Los Angeles', 'San Diego', 'Las Vegas', 'Phoenix', 'Albuquerque',
+           'Denver', 'San Antonio', 'Dallas', 'Houston', 'Kansas City',
+           'Minneapolis', 'Saint Louis', 'Chicago', 'Nashville', 'Indianapolis',
+           'Atlanta', 'Detroit', 'Jacksonville', 'Charlotte', 'Miami',
+           'Pittsburgh', 'Toronto', 'Philadelphia', 'New York', 'Montreal',
+           'Boston']]
+    df = df.dropna(axis=0, how='any')
+    dts = (df.index[1:] - df.index[:-1]).to_numpy()
+    df = df.iloc[np.nonzero(dts > dts.min())[0].max() + 1:]
+    Xfs = df.values.copy()
+    ds_factor = 24
+    X = scipy.signal.resample(Xfs, Xfs.shape[0] // ds_factor, axis=0)
+    return X
+
 class CrossValidate:
     def __init__(self, X, Y, num_folds):
         self.X, self.Y = X, Y
@@ -91,22 +137,15 @@ class CrossValidate:
         fold_idx, fold_size = self.fold_idx, self.fold_size
         if fold_idx == self.num_folds:
             raise StopIteration
-            
+
         i1 = fold_idx*fold_size
         i2 = (fold_idx + 1)*fold_size
-        
+
         X, Y = self.X, self.Y
         X_test = X[i1:i2]
         Y_test = Y[i1:i2]
         X_train = np.vstack((X[:i1], X[i2:]))
         Y_train = np.vstack((Y[:i1], Y[i2:]))
-        
+
         self.fold_idx += 1
         return X_train, X_test, Y_train, Y_test, fold_idx
-
-
-
-
-
-
-

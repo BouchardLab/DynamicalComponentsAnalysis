@@ -433,9 +433,9 @@ class GaussianProcessFactorAnalysis(object):
         # Allocated and reuse these
         C = self.C_
         R = self.R_
-        big_K = [calc_big_K(Ti, self.n_factors, self.tau_, self.var_n) for Ti in T]
-        y_cov = [block_dot_B(block_dot_A(C, big_Ki, Ti), C.T, Ti) + make_block_diag(R, Ti)
-                 for big_Ki, Ti in zip(big_K, T)]
+        big_K = {Ti: calc_big_K(Ti, self.n_factors, self.tau_, self.var_n) for Ti in set(T)}
+        y_cov = [block_dot_B(block_dot_A(C, big_K[Ti], Ti), C.T, Ti) + make_block_diag(R, Ti)
+                 for Ti in T]
         big_d = [np.tile(self.d_, Ti) for Ti in T]
         big_y = [yi.ravel() for yi in y]
         ll_pre = log_likelihood(big_d, y_cov, big_y)
@@ -470,8 +470,8 @@ class GaussianProcessFactorAnalysis(object):
         R = self.R_
 
         mean, big_K, big_dy, KCt, KCt_CKCtR_inv = self._E_mean(y)
-        cov = [big_Ki - KCt_CKCtR_invi.dot(KCti.T)
-               for big_Ki, KCt_CKCtR_invi, KCti in zip(big_K, KCt_CKCtR_inv, KCt)]
+        cov = [big_K[Ti] - KCt_CKCtR_invi.dot(KCti.T)
+               for Ti, KCt_CKCtR_invi, KCti in zip(T, KCt_CKCtR_inv, KCt)]
         y_cov = [block_dot_A(C, KCti, Ti) + make_block_diag(R, Ti)
                  for KCti, Ti in zip(KCt, T)]
 
@@ -531,8 +531,8 @@ class GaussianProcessFactorAnalysis(object):
         R = self.R_
 
         mean, big_K, big_dy, KCt, KCt_CKCtR_inv = self._E_mean(y)
-        cov = [big_Ki - KCt_CKCtR_invi.dot(KCti.T)
-               for big_Ki, KCt_CKCtR_invi, KCti in zip(big_K, KCt_CKCtR_inv, KCt)]
+        cov = [big_K[Ti] - KCt_CKCtR_invi.dot(KCti.T)
+               for Ti, KCt_CKCtR_invi, KCti in zip(T, KCt_CKCtR_inv, KCt)]
         y_cov = [block_dot_A(C, KCti, Ti) + make_block_diag(R, Ti)
                  for KCti, Ti in zip(KCt, T)]
         return log_likelihood(big_d, y_cov, big_y)
@@ -543,7 +543,7 @@ class GaussianProcessFactorAnalysis(object):
         return self._calc_loglikelihood(y)
 
 
-    def _optimize_tau(self, tau_init, T, Sigma_mu_mu_x):
+    def _optimize_tau(self, tau_init, T, Sigma_mu_mu_x, big_K=None):
         """Optimization for tau.
 
         Parameters
@@ -560,20 +560,21 @@ class GaussianProcessFactorAnalysis(object):
         opt_tau : ndarray
             Optimal tau parameters from M step.
         """
+        if K is None:
+            big_K = {Ti: None for Ti in set(T)}
         log_tau_init = np.log(tau_init)
         var_f = 1. - self.var_n
         def f_df(log_tau):
-            K = [calc_big_K(Ti, self.n_factors, np.exp(log_tau), self.var_n) for Ti in T]
-            K_inv = [np.linalg.inv(Ki) for Ki in K]
-            f = sum([-.5 * (np.sum(K_invi * Sigma_mu_mu_xi) + np.linalg.slogdet(2. * np.pi * Ki)[1])
-                     for K_invi, Sigma_mu_mu_xi, Ki in zip(K_inv, Sigma_mu_mu_x, K)])
+            big_K = {Ti: calc_big_K(Ti, self.n_factors, np.exp(log_tau), self.var_n, big_K[Ti]) for Ti in set(T)}
+            K_inv = {Ti: np.linalg.inv(big_K[Ti]) for Ti in set(T)]
+            f = sum([-.5 * (np.sum(K_inv[Ti] * Sigma_mu_mu_xi) + np.linalg.slogdet(2. * np.pi * big_K[Ti])[1])
+                     for Ti, Sigma_mu_mu_xi in zip(Ti, Sigma_mu_mu_x)])
 
             df = np.zeros_like(log_tau)
             t_vals = [np.arange(Ti)[np.newaxis] for Ti in T]
             delta_t = [t_valsi - t_valsi.T for t_valsi in t_vals]
-            for batch_idx in range(len(T)):
-                Tb = T[batch_idx]
-                Kb = K[batch_idx]
+            for batch_idx, Tb in enumerate(T):
+                Kb = big_K[Tb]
                 Sigma_mu_mu_xb = Sigma_mu_mu_x[batch_idx]
                 delta_tb = delta_t[batch_idx]
                 for ii, lti in enumerate(log_tau):
@@ -611,17 +612,16 @@ class GaussianProcessFactorAnalysis(object):
         C = self.C_
         R = self.R_
         if big_K is None:
-            big_K = [None] * len(T)
+            big_K = {Ti: None for Ti in set(T)}
 
-        big_K = [calc_big_K(Ti, self.n_factors, self.tau_, self.var_n, big_Ki)
-                 for Ti, big_Ki in zip(T, big_K)]
+        big_K = {Ti: calc_big_K(Ti, self.n_factors, self.tau_, self.var_n, big_K[Ti])
+                 for Ti in set(T)}
         R_inv = np.linalg.inv(self.R_)
         big_dy = [big_yi - big_di  for big_yi, big_di in zip(big_y, big_d)]
-        KCt = [block_dot_B(big_Ki, C.T, Ti)
-               for big_Ki, Ti in zip(big_K, T)]
+        KCt = [block_dot_B(big_K[Ti], C.T, Ti) for Ti in T]
 
-        KCt_CKCtR_inv = [KCti.dot(matrix_inversion_identity(R_inv, big_Ki, C, Ti))
-                         for KCti, big_Ki, Ti in zip(KCt, big_K, T)]
+        KCt_CKCtR_inv = [KCti.dot(matrix_inversion_identity(R_inv, big_K[Ti], C, Ti))
+                         for KCti, Ti in zip(KCt, T)]
         mean = [KCt_CKCtR_invi.dot(big_dyi) for KCt_CKCtR_invi, big_dyi in zip(KCt_CKCtR_inv, big_dy)]
         return mean, big_K, big_dy, KCt, KCt_CKCtR_inv
 

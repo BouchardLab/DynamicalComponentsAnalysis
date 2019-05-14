@@ -664,19 +664,22 @@ class SlowFeatureAnalysis(object):
         X : ndarray (time, features)
             Data to fit SFA model to.
         """
-        self.mean_ = X.mean(axis=0, keepdims=True)
-        X_stan = X - self.mean_
-        uX, sX, vhX = np.linalg.svd(X_stan, full_matrices=False)
+        if isinstance(X, np.ndarray) and X.ndim == 2:
+            X = [X]
+        self.mean_ = np.concatenate(X).mean(axis=0, keepdims=True)
+        X_stan = [Xi - self.mean_ for Xi in X]
+        uX, sX, vhX = np.linalg.svd(np.concatenate(X_stan), full_matrices=False)
         whiten = vhX.T @ np.diag(1. / sX)
-        Xw = X_stan @ whiten
-        Xp = np.diff(Xw, axis=0)
-        up, sp, vhp = np.linalg.svd(Xp, full_matrices=False)
+        Xw = [X_stani @ whiten for X_stani in X_stan]
+        Xp = [np.diff(Xwi, axis=0) for Xwi in Xw]
+        up, sp, vhp = np.linalg.svd(np.concatenate(Xp), full_matrices=False)
         proj = vhp.T
-        self.coef_ = whiten @ proj[:, ::-1][:, :self.n_components]
-        self.coef_ /= np.linalg.norm(self.coef_, axis=0, keepdims=True)
+        self.all_coef_ = whiten @ proj[:, ::-1]
+        self.all_coef_ /= np.linalg.norm(self.all_coef_, axis=0, keepdims=True)
+        self.coef_ = self.all_coef_[:, :self.n_components]
         return self
 
-    def transform(self, X):
+    def transform(self, X, n_components=None):
         """Transform the data according to the fit SFA model.
 
         Parameters
@@ -684,11 +687,13 @@ class SlowFeatureAnalysis(object):
         X : ndarray (time, features)
             Data to transform using the SFA model.
         """
+        if n_components is None:
+            n_components = self.n_components
         if self.coef_ is None:
             raise ValueError
-        return (X - self.mean_) @ self.coef_
+        return (X - self.mean_) @ self.all_coef_[:, :n_components]
 
-    def fit_transform(self, X):
+    def fit_transform(self, X, n_components=None):
         """Fit the SFA model and transform the features.
 
         Parameters
@@ -696,5 +701,7 @@ class SlowFeatureAnalysis(object):
         X : ndarray (time, features)
             Data to fit SFA model to and then transformk.
         """
+        if n_components is None:
+            n_components = self.n_components
         self.fit(X)
-        return (X - self.mean_) @ self.coef_
+        return (X - self.mean_) @ self.all_coef_[:, :n_components]

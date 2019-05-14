@@ -1,9 +1,10 @@
 import numpy as np
 import h5py
 from sklearn.linear_model import LinearRegression as LR
+from sklearn.decomposition import PCA
 
 from .data_util import CrossValidate, form_lag_matrix
-
+from .methods_comparison import SlowFeatureAnalysis as SFA
 
 def linear_decode_r2(X_train, Y_train, X_test, Y_test, decoding_window=1, offset=0):
     X_train_lags = form_lag_matrix(X_train, decoding_window)

@@ -6,6 +6,7 @@ import scipy
 from scipy.optimize import minimize
 from sklearn.decomposition import FactorAnalysis as FA, PCA
 from sklearn.exceptions import ConvergenceWarning
+from functools import partial
 
 import torch
 from torch.nn import functional as F
@@ -362,22 +363,20 @@ def matrix_inversion_identity(R_inv, K, C, T):
     term1 = block_dot_A(R_invC, np.linalg.solve(sub, make_block_diag(R_invC.T, T)), T)
     return make_block_diag(R_inv, T) -  term1
 
-def log_likelihood(mu, sigma, y):
+def log_likelihood(mu, sigma, y, T):
     """Log likelihood for a multivariate normal distribution.
 
     Only works for 1 sample data.
     """
-    log_likelihood = 0.
-    for mui, sigmai, yi in zip(mu, sigma, y):
+    ll = 0.
+    for yi, Ti in zip(y, T):
         d = yi.size
-        log_det_cov = np.linalg.slogdet(sigmai)[1]
-        y_minus_mean = yi - mui
+        log_det_cov = np.linalg.slogdet(sigma[Ti])[1]
+        y_minus_mean = yi - mu[Ti]
         term3 = np.dot(y_minus_mean.T.ravel(),
-                       np.linalg.solve(sigmai, y_minus_mean.T).ravel())
-        log_likelihood += (-0.5*d*np.log(2*np.pi)
-                           - 0.5*log_det_cov
-                           - 0.5*term3)
-    return log_likelihood
+                       np.linalg.solve(sigma[Ti], y_minus_mean.T).ravel())
+        ll += (-0.5*d*np.log(2*np.pi) - 0.5*log_det_cov - 0.5*term3)
+    return ll
 
 
 class GaussianProcessFactorAnalysis(object):
@@ -434,11 +433,11 @@ class GaussianProcessFactorAnalysis(object):
         C = self.C_
         R = self.R_
         big_K = {Ti: calc_big_K(Ti, self.n_factors, self.tau_, self.var_n) for Ti in set(T)}
-        y_cov = [block_dot_B(block_dot_A(C, big_K[Ti], Ti), C.T, Ti) + make_block_diag(R, Ti)
-                 for Ti in T]
-        big_d = [np.tile(self.d_, Ti) for Ti in T]
+        y_cov = {Ti: block_dot_B(block_dot_A(C, big_K[Ti], Ti), C.T, Ti) + make_block_diag(R, Ti)
+                 for Ti in set(T)}
+        big_d = {Ti: np.tile(self.d_, Ti) for Ti in set(T)}
         big_y = [yi.ravel() for yi in y]
-        ll_pre = log_likelihood(big_d, y_cov, big_y)
+        ll_pre = log_likelihood(big_d, y_cov, big_y, T)
         if self.verbose:
             print("FA log likelihood:", ll_pre)
 
@@ -464,24 +463,23 @@ class GaussianProcessFactorAnalysis(object):
         """
         n = y[0].shape[1]
         T = [yi.shape[0] for yi in y]
-        big_d = [np.tile(self.d_, Ti) for Ti in T]
+        big_d = {Ti: np.tile(self.d_, Ti) for Ti in set(T)}
         big_y = [yi.ravel() for yi in y]
         C = self.C_
         R = self.R_
 
         mean, big_K, big_dy, KCt, KCt_CKCtR_inv = self._E_mean(y)
-        cov = [big_K[Ti] - KCt_CKCtR_invi.dot(KCti.T)
-               for Ti, KCt_CKCtR_invi, KCti in zip(T, KCt_CKCtR_inv, KCt)]
-        y_cov = [block_dot_A(C, KCti, Ti) + make_block_diag(R, Ti)
-                 for KCti, Ti in zip(KCt, T)]
+        cov = {Ti: big_K[Ti] - KCt_CKCtR_inv[Ti].dot(KCt[Ti].T) for Ti in set(T)}
+        y_cov = {Ti: block_dot_A(C, KCt[Ti], Ti) + make_block_diag(R, Ti)
+                 for Ti in set(T)}
 
         if self.verbose == 2:
             #Compute log likelihood under current params
-            ll = log_likelihood(big_d, y_cov, big_y)
+            ll = log_likelihood(big_d, y_cov, big_y, T)
             print("Pre update log likelihood:", ll)
 
         x = [meani.reshape(Ti, -1) for meani, Ti in zip(mean, T)]
-        big_xxp = [covi + np.outer(meani, meani) for covi, meani in zip(cov, mean)]
+        big_xxp = [cov[Ti] + np.outer(meani, meani) for Ti, meani in zip(T, mean)]
         nf = self.n_factors
         xxp = np.zeros((nf + 1, nf + 1))
         for Ti, big_xxpi in zip(T, big_xxp):
@@ -511,7 +509,7 @@ class GaussianProcessFactorAnalysis(object):
             #Compute log likelihood under current params
             ll = self._calc_loglikelihood(y)
             print("Exact update log likelihood:", ll)
-        self.tau_ = self._optimize_tau(self.tau_, T, big_xxp)
+        self.tau_ = self._optimize_tau(self.tau_, T, big_xxp, big_K)
         ll = self._calc_loglikelihood(y)
         if self.verbose == 2:
             #Compute log likelihood under current params
@@ -525,17 +523,17 @@ class GaussianProcessFactorAnalysis(object):
     def _calc_loglikelihood(self, y):
         n = y[0].shape[1]
         T = [yi.shape[0] for yi in y]
-        big_d = [np.tile(self.d_, Ti) for Ti in T]
+        big_d = {Ti: np.tile(self.d_, Ti) for Ti in set(T)}
         big_y = [yi.ravel() for yi in y]
         C = self.C_
         R = self.R_
 
         mean, big_K, big_dy, KCt, KCt_CKCtR_inv = self._E_mean(y)
-        cov = [big_K[Ti] - KCt_CKCtR_invi.dot(KCti.T)
-               for Ti, KCt_CKCtR_invi, KCti in zip(T, KCt_CKCtR_inv, KCt)]
-        y_cov = [block_dot_A(C, KCti, Ti) + make_block_diag(R, Ti)
-                 for KCti, Ti in zip(KCt, T)]
-        return log_likelihood(big_d, y_cov, big_y)
+        cov = {Ti: big_K[Ti] - KCt_CKCtR_inv[Ti].dot(KCt[Ti].T)
+               for Ti in T}
+        y_cov = {Ti: block_dot_A(C, KCt[Ti], Ti) + make_block_diag(R, Ti)
+                 for Ti in T}
+        return log_likelihood(big_d, y_cov, big_y, T)
 
     def score(self, y):
         if isinstance(y, np.ndarray) and y.ndim == 2:
@@ -560,15 +558,15 @@ class GaussianProcessFactorAnalysis(object):
         opt_tau : ndarray
             Optimal tau parameters from M step.
         """
-        if K is None:
+        if big_K is None:
             big_K = {Ti: None for Ti in set(T)}
         log_tau_init = np.log(tau_init)
         var_f = 1. - self.var_n
-        def f_df(log_tau):
+        def f_df(big_K, log_tau):
             big_K = {Ti: calc_big_K(Ti, self.n_factors, np.exp(log_tau), self.var_n, big_K[Ti]) for Ti in set(T)}
-            K_inv = {Ti: np.linalg.inv(big_K[Ti]) for Ti in set(T)]
+            K_inv = {Ti: np.linalg.inv(big_K[Ti]) for Ti in set(T)}
             f = sum([-.5 * (np.sum(K_inv[Ti] * Sigma_mu_mu_xi) + np.linalg.slogdet(2. * np.pi * big_K[Ti])[1])
-                     for Ti, Sigma_mu_mu_xi in zip(Ti, Sigma_mu_mu_x)])
+                     for Ti, Sigma_mu_mu_xi in zip(T, Sigma_mu_mu_x)])
 
             df = np.zeros_like(log_tau)
             t_vals = [np.arange(Ti)[np.newaxis] for Ti in T]
@@ -590,7 +588,7 @@ class GaussianProcessFactorAnalysis(object):
 
             return -f, -df
 
-        opt_result = minimize(f_df, x0=log_tau_init, method="L-BFGS-B", jac=True)
+        opt_result = minimize(partial(f_df, big_K), x0=log_tau_init, method="L-BFGS-B", jac=True)
         opt_tau = np.exp(opt_result.x)
         return opt_tau
 
@@ -618,11 +616,11 @@ class GaussianProcessFactorAnalysis(object):
                  for Ti in set(T)}
         R_inv = np.linalg.inv(self.R_)
         big_dy = [big_yi - big_di  for big_yi, big_di in zip(big_y, big_d)]
-        KCt = [block_dot_B(big_K[Ti], C.T, Ti) for Ti in T]
+        KCt = {Ti: block_dot_B(big_K[Ti], C.T, Ti) for Ti in set(T)}
 
-        KCt_CKCtR_inv = [KCti.dot(matrix_inversion_identity(R_inv, big_K[Ti], C, Ti))
-                         for KCti, Ti in zip(KCt, T)]
-        mean = [KCt_CKCtR_invi.dot(big_dyi) for KCt_CKCtR_invi, big_dyi in zip(KCt_CKCtR_inv, big_dy)]
+        KCt_CKCtR_inv = {Ti: KCt[Ti].dot(matrix_inversion_identity(R_inv, big_K[Ti], C, Ti))
+                         for Ti in T}
+        mean = [KCt_CKCtR_inv[Ti].dot(big_dyi) for Ti, big_dyi in zip(T, big_dy)]
         return mean, big_K, big_dy, KCt, KCt_CKCtR_inv
 
     def transform(self, y):

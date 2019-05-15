@@ -124,6 +124,7 @@ def load_weather_data(filename):
 """
 Download .mat files from 
 https://zenodo.org/record/583331#.XNtzE5NKjys
+Longest session (only has M1): indy_20160627_01.mat
 """
 def load_sabes_data(filename, bin_width_s=.100):
     #Load MATLAB file

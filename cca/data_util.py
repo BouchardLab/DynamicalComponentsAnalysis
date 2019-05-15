@@ -176,10 +176,11 @@ def load_sabes_data(filename, bin_width_s=.100):
         return result
 
 class CrossValidate:
-    def __init__(self, X, Y, num_folds):
+    def __init__(self, X, Y, num_folds, stack=True):
         self.X, self.Y = X, Y
         self.num_folds = num_folds
         self.fold_size = len(X) // num_folds
+        self.stack = stack
 
     def __iter__(self):
         self.fold_idx = 0
@@ -196,8 +197,12 @@ class CrossValidate:
         X, Y = self.X, self.Y
         X_test = X[i1:i2]
         Y_test = Y[i1:i2]
-        X_train = np.vstack((X[:i1], X[i2:]))
-        Y_train = np.vstack((Y[:i1], Y[i2:]))
+        if self.stack:
+            X_train = np.concatenate((X[:i1], X[i2:]))
+            Y_train = np.concatenate((Y[:i1], Y[i2:]))
+        else:
+            X_train = [X[:i1], X[i2:]]
+            Y_train = [Y[:i1], Y[i2:]]
 
         self.fold_idx += 1
         return X_train, X_test, Y_train, Y_test, fold_idx

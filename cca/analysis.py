@@ -3,8 +3,10 @@ import h5py
 from sklearn.linear_model import LinearRegression as LR
 from sklearn.decomposition import PCA
 
+from .cov_util import calc_cross_cov_mats_from_data
 from .data_util import CrossValidate, form_lag_matrix
 from .methods_comparison import SlowFeatureAnalysis as SFA
+from .cca import ComplexityComponentsAnalysis
 
 def linear_decode_r2(X_train, Y_train, X_test, Y_test, decoding_window=1, offset=0):
     X_train_lags = form_lag_matrix(X_train, decoding_window)
@@ -25,7 +27,8 @@ def linear_decode_r2(X_train, Y_train, X_test, Y_test, decoding_window=1, offset
     return r2
 
 
-def run_analysis(X, Y, T_pi_vals, dim_vals, offset_vals, num_cv_folds, decoding_window):
+def run_analysis(X, Y, T_pi_vals, dim_vals, offset_vals, num_cv_folds, decoding_window,
+                 n_init=1):
 
     results_size = (num_cv_folds, len(dim_vals), len(offset_vals), len(T_pi_vals) + 2)
     results = np.zeros(results_size)
@@ -52,11 +55,11 @@ def run_analysis(X, Y, T_pi_vals, dim_vals, offset_vals, num_cv_folds, decoding_
         cross_cov_mats = calc_cross_cov_mats_from_data(X_train_ctd, T_max)
 
         #do PCA/SFA
-        V_pca = pca_proj(X_train_ctd)
-        V_sfa = sfa_proj(X_train_ctd)
+        pca_model = PCA(svd_solver='full').fit(np.concatenate(X_train_ctd)
+        sfa_model = SFA(1).fit(X_train_ctd)
 
         #make DCA object
-        opt = ComplexityComponentsAnalysis(verbose=False, tol=1e-6)
+        opt = ComplexityComponentsAnalysis()
 
         #loop over dimensionalities
         for dim_idx in range(len(dim_vals)):
@@ -64,10 +67,10 @@ def run_analysis(X, Y, T_pi_vals, dim_vals, offset_vals, num_cv_folds, decoding_
             print("dim", dim_idx + 1, "of", len(dim_vals))
 
             #compute PCA/SFA R2 vals
-            X_train_pca = np.dot(X_train_ctd, V_pca[:, :dim])
-            X_test_pca = np.dot(X_test_ctd, V_pca[:, :dim])
-            X_train_sfa = np.dot(X_train_ctd, V_sfa[:, :dim])
-            X_test_sfa = np.dot(X_test_ctd, V_sfa[:, :dim])
+            X_train_pca = np.dot(X_train_ctd, pca_model.components_[:dim].T)
+            X_test_pca = np.dot(X_test_ctd, pca_model.components_[:dim].T)
+            X_train_sfa = np.dot(X_train_ctd, sfa_model.all_coef_[:, :dim])
+            X_test_sfa = np.dot(X_test_ctd, sfa_model.all_coef_[:, :dim])
             for offset_idx in range(len(offset_vals)):
                 offset = offset_vals[offset_idx]
                 r2_pca = linear_decode_r2(X_train_pca, Y_train_ctd, X_test_pca, Y_test_ctd, decoding_window=decoding_window, offset=offset)
@@ -79,7 +82,7 @@ def run_analysis(X, Y, T_pi_vals, dim_vals, offset_vals, num_cv_folds, decoding_
             for T_pi_idx in range(len(T_pi_vals)):
                 T_pi = T_pi_vals[T_pi_idx]
                 opt.cross_covs = cross_cov_mats[:2*T_pi]
-                opt.fit_projection(d=dim, n_init=N_INIT)
+                opt.fit_projection(d=dim, n_init=n_init)
                 V_dca = opt.coef_
 
                 #compute DCA R2 over offsets

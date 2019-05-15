@@ -78,19 +78,6 @@ def load_mocap_data(filename, z_score=True):
 	return angles
 
 
-def load_sabes_data(filename, bin_width_s=0.05, session=None, min_spike_count=1000):
-    with h5py.File(filename, "r") as f:
-        sessions = list(f.keys())
-        lengths = np.array([f[session]["M1"]["spikes"].shape[0] for session in sessions])
-        if session is None:
-            #use longest session if none is provided
-            session = sessions[np.argsort(lengths)[::-1][0]]
-        X, Y = f[session]["M1"]["spikes"][:], f[session]["cursor"][:]
-    chunk_size = int(np.round(bin_width_s / .004)) #4 ms default bin width
-    X, Y = sum_over_chunks(X, chunk_size), sum_over_chunks(Y, chunk_size)/chunk_size
-    X = X[:, np.sum(X, axis=0) > min_spike_count]
-    return X, Y
-
 def load_kording_paper_data(filename, bin_width_s=0.1, min_spike_count=10):
     file = open(filename, "rb")
     data = pickle.load(file)
@@ -122,6 +109,20 @@ def load_weather_data(filename):
     ds_factor = 24
     X = scipy.signal.resample(Xfs, Xfs.shape[0] // ds_factor, axis=0)
     return X
+
+def load_sabes_data(filename, bin_width_s=0.05, session=None, min_spike_count=1000):
+    with h5py.File(filename, "r") as f:
+        sessions = list(f.keys())
+        lengths = np.array([f[session]["M1"]["spikes"].shape[0] for session in sessions])
+        if session is None:
+            #use longest session if none is provided
+            session = sessions[np.argsort(lengths)[::-1][0]]
+        X, Y = f[session]["M1"]["spikes"][:], f[session]["cursor"][:]
+    chunk_size = int(np.round(bin_width_s / .004)) #4 ms default bin width
+    X, Y = sum_over_chunks(X, chunk_size), sum_over_chunks(Y, chunk_size)/chunk_size
+    X = X[:, np.sum(X, axis=0) > min_spike_count]
+    return X, Y
+
 
 class CrossValidate:
     def __init__(self, X, Y, num_folds):

@@ -241,7 +241,7 @@ def make_cepts2(X, T_pi):
     Y = torch.transpose(Y, 1, 2)
 
     # Compower the power spectral density
-    window = torch.Tensor(hann(Y.shape[-1])[np.newaxis, np.newaxis])
+    window = torch.Tensor(hann(Y.shape[-1])[np.newaxis, np.newaxis]).type(Y.dtype)
     Yf = torch.rfft(Y * window, 1, onesided=True)
     spect = Yf[:, :, :, 0]**2 + Yf[:, :, :, 1]**2
     spect = spect.mean(dim=1)
@@ -267,7 +267,7 @@ def pi_fft_loss_fn(X, proj, T_pi):
     Xp_tensor = torch.unsqueeze(Xp_tensor, 1)
     bs2 = make_cepts2(Xp_tensor, T_pi)
     ks = torch.arange(bs2.shape[-1], dtype=bs2.dtype)
-    return .5 * (torch.unsqueeze(ks, 0) * bs2).sum(dim=1).sum()
+    return -.5 * (torch.unsqueeze(ks, 0) * bs2).sum(dim=1).sum()
 
 
 class DynamicalComponentsAnalysisFFT(object):
@@ -311,7 +311,7 @@ class DynamicalComponentsAnalysisFFT(object):
             coef, pi = self._fit_projection(X, d=d)
             pis.append(pi)
             coefs.append(coef)
-        idx = np.argmax(pis)
+        idx = np.argmin(pis)
         self.coef_ = coefs[idx]
 
     def _fit_projection(self, X, d=None):

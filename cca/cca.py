@@ -124,7 +124,7 @@ class ComplexityComponentsAnalysis(object):
         idx = np.argmax(pis)
         self.coef_ = coefs[idx]
 
-    def _fit_projection(self, d=None):
+    def _fit_projection(self, d=None, record_V=False):
         if d is None:
             d = self.d
         if d < 1:
@@ -155,7 +155,9 @@ class ComplexityComponentsAnalysis(object):
         	c = torch.tensor(c, device=self.device, dtype=self.dtype)
 
         if self.use_scipy:
-            if self.verbose:
+            if self.verbose or record_V:
+                if record_V:
+                    self.V_seq = [V_init]
                 def callback(v_flat):
                     v_flat_torch = torch.tensor(v_flat,
                                                 requires_grad=True,
@@ -168,8 +170,12 @@ class ComplexityComponentsAnalysis(object):
                     loss_no_reg = loss - reg_val
                     loss = loss.detach().cpu().numpy()
                     reg_val = reg_val.detach().cpu().numpy()
-                    print("PI: {} nats, reg: {}".format(str(np.round(-loss, 4)),
-                                                        str(np.round(reg_val, 4))))
+                    if record_V:
+                        self.V_seq.append(v_flat.reshape(N, d))
+                    if self.verbose:
+                        print("PI: {} nats, reg: {}".format(str(np.round(-loss, 4)), str(np.round(reg_val, 4))))
+
+
                 callback(V_init)
             else:
                 callback = None
@@ -234,14 +240,14 @@ class ComplexityComponentsAnalysis(object):
     def score(self):
         return calc_pi_from_cross_cov_mats(self.cross_covs, self.coef_)
 
-
+ 
 def make_cepts2(X, T_pi):
     """Calculate the squared real cepstral coefficents."""
     Y = F.unfold(X, kernel_size=[T_pi, 1], stride=T_pi)
     Y = torch.transpose(Y, 1, 2)
 
-    # Compower the power spectral density
-    window = torch.Tensor(hann(Y.shape[-1])[np.newaxis, np.newaxis])
+    # Compute the power spectral density
+    window = torch.Tensor(hann(Y.shape[-1])[np.newaxis, np.newaxis]).type(Y.dtype)
     Yf = torch.rfft(Y * window, 1, onesided=True)
     spect = Yf[:, :, :, 0]**2 + Yf[:, :, :, 1]**2
     spect = spect.mean(dim=1)
@@ -255,8 +261,11 @@ def make_cepts2(X, T_pi):
     cepts = torch.sqrt(cepts[:, :, 0]**2 + cepts[:, :, 1]**2)
     return cepts**2
 
-def pi_fft_loss_fn(X, proj, T_pi):
-    """Power spectrum entropy loss function."""
+"""
+This is well-tested when X has shape (# time steps, 1).
+Otherwise, behavior has not been considered.
+"""
+def pi_fft(X, proj, T_pi):
     if not isinstance(X, torch.Tensor):
         X = torch.Tensor(X)
     if not isinstance(proj, torch.Tensor):
@@ -311,7 +320,7 @@ class DynamicalComponentsAnalysisFFT(object):
             coef, pi = self._fit_projection(X, d=d)
             pis.append(pi)
             coefs.append(coef)
-        idx = np.argmax(pis)
+        idx = np.argmin(pis)
         self.coef_ = coefs[idx]
 
     def _fit_projection(self, X, d=None):
@@ -347,11 +356,11 @@ class DynamicalComponentsAnalysisFFT(object):
                                             device=self.device,
                                             dtype=self.dtype)
                 v_torch = v_flat_torch.reshape(N, d)
-                ent = pi_fft_loss_fn(Xt, v_torch, self.T)
+                pi = pi_fft(Xt, v_torch, self.T)
                 reg_val = ortho_reg_fn(v_torch, self.ortho_lambda)
-                ent = ent.detach().cpu().numpy()
+                pi = pi.detach().cpu().numpy()
                 reg_val = reg_val.detach().cpu().numpy()
-                print("PI: {} nats, reg: {}".format(str(np.round(ent, 4)),
+                print("PI: {} nats, reg: {}".format(str(np.round(pi, 4)),
                                                     str(np.round(reg_val, 4))))
             callback(V_init)
         else:
@@ -362,15 +371,15 @@ class DynamicalComponentsAnalysisFFT(object):
                                         device=self.device,
                                         dtype=self.dtype)
             v_torch = v_flat_torch.reshape(N, d)
-            ent = pi_fft_loss_fn(Xt, v_torch, self.T)
+            pi = pi_fft(Xt, v_torch, self.T)
             reg_val = ortho_reg_fn(v_torch, self.ortho_lambda)
-            loss = ent + reg_val
+            loss = -pi + reg_val
             loss.backward()
             grad = v_flat_torch.grad
             return loss.detach().cpu().numpy().astype(float), grad.detach().cpu().numpy().astype(float)
         opt = minimize(f_df, V_init.ravel(), method='L-BFGS-B', jac=True,
-                       options={'disp': self.verbose, 'ftol': 1e-6, 'gtol': 1e-5, 'maxfun': 15000, 'maxiter': 15000, 'maxls': 20},
-                       callback=callback)
+                           options={'disp': self.verbose, 'ftol': self.tol},
+                           callback=callback)
         v = opt.x.reshape(N, d)
 
         # Orthonormalize the basis prior to returning it
@@ -380,7 +389,7 @@ class DynamicalComponentsAnalysisFFT(object):
                                     device=self.device,
                                     dtype=self.dtype)
         v_torch = v_flat_torch.reshape(N, d)
-        final_pi = pi_fft_loss_fn(Xt, v_torch, self.T).detach().cpu().numpy()
+        final_pi = pi_fft(Xt, v_torch, self.T).detach().cpu().numpy()
         return V_opt, final_pi
 
     def transform(self, X):

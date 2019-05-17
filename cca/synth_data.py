@@ -3,6 +3,7 @@ import scipy
 import h5py
 from scipy.linalg import expm
 from numpy.linalg import matrix_power 
+from scipy.signal import resample
 
 from .cov_util import calc_cov_from_cross_cov_mats, calc_cross_cov_mats_from_cov, calc_cross_cov_mats_from_data, calc_pi_from_cov
 from .data_util import sum_over_chunks
@@ -190,7 +191,7 @@ def embed_gp(T, N, d, kernel, noise_cov, T_pi=None, num_to_concat=1):
     return X, Y, U, full_pi, embedding_pi, high_d_cross_cov_mats
 
 
-def gen_lorenz_system(T, integration_dt=0.005, data_dt=0.025):
+def gen_lorenz_system(T, integration_dt=0.005):
     #Period ~ 1 unit of time (total time is T)
     #So make sure integration_dt << 1
 
@@ -210,33 +211,20 @@ def gen_lorenz_system(T, integration_dt=0.005, data_dt=0.025):
     x_0 = np.ones(3)
     t = np.arange(0, T, integration_dt)
     X = scipy.integrate.odeint(dx_dt, x_0, t)
-
-    skip = int(np.round(data_dt / integration_dt))
-    X_downsampled = sum_over_chunks(X, skip) #X[::skip, :]
-
-    return X_downsampled
-
-""" 
-def embed_lorenz_system(T, integration_dt, data_dt, N, noise_cov):
-
-    #Latent dynamics
-    Y = gen_lorenz_system(T, integration_dt, data_dt)
-
-    #Z-score the lorenz system
-    Y -= Y.mean(axis=0)
-    Y /= Y.std(axis=0)
-
-    #Random orthogonal embedding matrix U
-    U = scipy.stats.ortho_group.rvs(N)[:, :3]
-
-    #Data matrix X
-    X = np.dot(Y, U.T)
-
-    #Corrupt data by spatially structured white noise
-    X += np.random.multivariate_normal(mean=np.zeros(N), cov=noise_cov, size=len(X))
-
     return X
-"""
+
+def gen_lorenz_data(num_samples, normalize=True):
+    integration_dt = 0.005
+    data_dt = 0.025
+    skipped_samples = 1000
+    T = (num_samples + skipped_samples) * data_dt
+    X = gen_lorenz_system(T, integration_dt)
+    if normalize:
+    	X -= X.mean(axis=0)
+    	X /= X.std(axis=0)
+    X_dwn = resample(X, num_samples + skipped_samples, axis=0)
+    X_dwn = X_dwn[skipped_samples:, :]
+    return X_dwn
 
 def oscillators_dynamics_mat(N=10, omega_sq=.01, alpha_sq=.2, gamma=.05, tau=1.):
     #spring matrix K
@@ -307,27 +295,22 @@ def median_subspace(N, D, num_samples=5000, V_0=None):
     median_subspace = subspaces[median_subspace_idx]
     return median_subspace
 
-def embedded_lorenz_cross_cov_mats(N, T=10, snr=1., num_lorenz_samples=10000, num_subspace_samples=5000):
+def embedded_lorenz_cross_cov_mats(N, T, snr=1., noise_dim=7, return_samples=False, num_lorenz_samples=10000, num_subspace_samples=5000):
     #Generate Lorenz dynamics
-    integration_dt = 0.005
-    data_dt = 0.025
-    X_dynamics = gen_lorenz_system((num_lorenz_samples + 1000)*data_dt, integration_dt, data_dt)[1000:]
-    X_dynamics = (X_dynamics - X_dynamics.mean(axis=0))/X_dynamics.std(axis=0)
+    X_dynamics = gen_lorenz_data(num_lorenz_samples)
     dynamics_var = np.max(scipy.linalg.eigvalsh(np.cov(X_dynamics.T)))
     #Generate dynamics embedding matrix (will remain fixed)
     np.random.seed(42)
     if N == 3:
-    	V_dynamics = np.eye(N)[:, :3]
+    	V_dynamics = np.eye(3)
     else:
     	V_dynamics = random_basis(N, 3)
     X = np.dot(X_dynamics, V_dynamics.T)
     #Generate a subspace with median principal angles w.r.t. dynamics subspace
-    noise_dim = 3
     V_noise = median_subspace(N, noise_dim, num_samples=num_subspace_samples, V_0=V_dynamics)
     #Extend V_noise to a basis for R^N
     if noise_dim < N:
         V_noise_comp = scipy.linalg.orth(np.eye(N) - np.dot(V_noise, V_noise.T))
-        print(V_noise_comp.shape)
         V_noise = np.concatenate((V_noise, V_noise_comp), axis=1)
     #Add noise covariacne
     noise_var = dynamics_var/snr
@@ -335,9 +318,15 @@ def embedded_lorenz_cross_cov_mats(N, T=10, snr=1., num_lorenz_samples=10000, nu
     cross_cov_mats = calc_cross_cov_mats_from_data(X_dynamics, T)
     cross_cov_mats = np.array([V_dynamics.dot(C).dot(V_dynamics.T) for C in cross_cov_mats])
     cross_cov_mats[0] += noise_cov
-    return cross_cov_mats
+    #Generate actual samples of high-D data
+    if return_samples:
+    	X_samples = np.dot(X_dynamics, V_dynamics.T) + np.random.multivariate_normal(mean=np.zeros(N), cov=noise_cov, size=len(X_dynamics))
+    	return cross_cov_mats, X_samples
+    else:
+    	return cross_cov_mats
 
 
+""" 
 def gen_chaotic_rnn(h5py_file, T, N, dt, tau, gamma, x_0=None, noise_cov=None):
 
     #Weight variance ~1/N
@@ -361,3 +350,4 @@ def gen_chaotic_rnn(h5py_file, T, N, dt, tau, gamma, x_0=None, noise_cov=None):
         X[i, :] = X[i-1, :] + dt*dx_dt(X[i-1, :], i*dt)
 
     return X
+"""

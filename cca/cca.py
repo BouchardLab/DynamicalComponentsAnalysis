@@ -124,7 +124,7 @@ class ComplexityComponentsAnalysis(object):
         idx = np.argmax(pis)
         self.coef_ = coefs[idx]
 
-    def _fit_projection(self, d=None):
+    def _fit_projection(self, d=None, record_V=False):
         if d is None:
             d = self.d
         if d < 1:
@@ -155,7 +155,9 @@ class ComplexityComponentsAnalysis(object):
         	c = torch.tensor(c, device=self.device, dtype=self.dtype)
 
         if self.use_scipy:
-            if self.verbose:
+            if self.verbose or record_V:
+                if record_V:
+                    self.V_seq = [V_init]
                 def callback(v_flat):
                     v_flat_torch = torch.tensor(v_flat,
                                                 requires_grad=True,
@@ -168,8 +170,12 @@ class ComplexityComponentsAnalysis(object):
                     loss_no_reg = loss - reg_val
                     loss = loss.detach().cpu().numpy()
                     reg_val = reg_val.detach().cpu().numpy()
-                    print("PI: {} nats, reg: {}".format(str(np.round(-loss, 4)),
-                                                        str(np.round(reg_val, 4))))
+                    if record_V:
+                        self.V_seq.append(v_flat.reshape(N, d))
+                    if self.verbose:
+                        print("PI: {} nats, reg: {}".format(str(np.round(-loss, 4)), str(np.round(reg_val, 4))))
+
+
                 callback(V_init)
             else:
                 callback = None

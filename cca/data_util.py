@@ -20,34 +20,6 @@ def sum_over_chunks(X, stride):
     summed = reshaped.sum(axis=1)
     return summed
 
-def get_active_channels(X, window_size, min_count):
-	good_idx = np.ones(X.shape[1], dtype=np.bool)
-	for i in range(len(X)):
-		if i - (window_size // 2) < 0:
-			start, end = 0, window_size
-		elif i + (window_size // 2) > len(X):
-			start, end = len(X) - window_size, len(X)
-		else:
-			start, end = i - window_size//2, i + window_size//2
-		good_idx *= (X[start:end, :].sum(axis=0) > min_count)
-	return good_idx
-
-def sliding_z_score(X, window_size):
-	N = X.shape[1]
-	X_ctd = np.zeros_like(X)
-	for i in range(len(X)):
-		if i - (window_size // 2) < 0:
-			start, end = 0, window_size
-		elif i + (window_size // 2) > len(X):
-			start, end = len(X) - window_size, len(X)
-		else:
-			start, end = i - window_size//2, i + window_size//2
-		mu, sigma = X[start:end, :].mean(axis=0), X[start:end, :].std(axis=0)
-		X_ctd[i, :] = (X[i] - mu)/sigma
-
-	X_ctd = (X_ctd - X_ctd.mean(axis=0))/X_ctd.std(axis=0)
-	return X_ctd
-
 def moving_center(X, n):
     if n % 2 == 0:
         n += 1 
@@ -61,46 +33,6 @@ def calc_autocorr_fns(X, T):
 	for dt in range(T):
 		autocorr_fns[:, dt] = np.sum((X[dt:]*X[:len(X)-dt]), axis=0)/(len(X)-dt)
 	return autocorr_fns
-
-def load_mocap_data(filename, z_score=True):
-	angles = []
-	with open(filename) as f:
-		#Skip header
-		line = f.readline().strip()
-		while line != ":DEGREES":
-			line = f.readline().strip()
-		#Parse body
-		line = f.readline().strip()
-		cur_angles = None
-		while line:
-			if line.isdigit():
-				#New time-step
-				if cur_angles is not None:
-					angles.append(cur_angles)
-				cur_angles = []
-			else:
-				#Continue adding angles to current time-step
-				parts = line.split(" ")
-				joint_name = parts[0]
-				joint_angles = [float(angle_str) for angle_str in parts[1:]]
-				cur_angles += joint_angles
-			line = f.readline().strip()
-	angles = np.array(angles)
-	return angles
-
-
-def load_kording_paper_data(filename, bin_width_s=0.1, min_spike_count=10):
-    file = open(filename, "rb")
-    data = pickle.load(file)
-    X, Y = data[0], data[1]
-    good_X_idx = (1 - (np.isnan(X[:, 0]) + np.isnan(X[:, 1]))).astype(np.bool)
-    good_Y_idx = (1 - (np.isnan(Y[:, 0]) + np.isnan(Y[:, 1]))).astype(np.bool)
-    good_idx = good_X_idx*good_Y_idx
-    X, Y = X[good_idx], Y[good_idx]
-    chunk_size = int(np.round(bin_width_s / 0.05)) #50 ms default bin width
-    X, Y = sum_over_chunks(X, chunk_size), sum_over_chunks(Y, chunk_size)/chunk_size
-    X = X[:, np.sum(X, axis=0) > min_spike_count]
-    return X, Y
 
 def load_weather_data(filename):
     df = pd.read_csv(filename)
@@ -125,6 +57,8 @@ def load_weather_data(filename):
 Download .mat files from 
 https://zenodo.org/record/583331#.XNtzE5NKjys
 Longest session (only has M1): indy_20160627_01.mat
+
+TODO: use downsampling w/ scipy.signal instead of decimation
 """
 def load_sabes_data(filename, bin_width_s=.100):
     #Load MATLAB file
@@ -207,3 +141,74 @@ class CrossValidate:
 
         self.fold_idx += 1
         return X_train, X_test, Y_train, Y_test, fold_idx
+
+
+"""
+
+def load_mocap_data(filename, z_score=True):
+	angles = []
+	with open(filename) as f:
+		#Skip header
+		line = f.readline().strip()
+		while line != ":DEGREES":
+			line = f.readline().strip()
+		#Parse body
+		line = f.readline().strip()
+		cur_angles = None
+		while line:
+			if line.isdigit():
+				#New time-step
+				if cur_angles is not None:
+					angles.append(cur_angles)
+				cur_angles = []
+			else:
+				#Continue adding angles to current time-step
+				parts = line.split(" ")
+				joint_name = parts[0]
+				joint_angles = [float(angle_str) for angle_str in parts[1:]]
+				cur_angles += joint_angles
+			line = f.readline().strip()
+	angles = np.array(angles)
+	return angles
+
+def load_kording_paper_data(filename, bin_width_s=0.1, min_spike_count=10):
+    file = open(filename, "rb")
+    data = pickle.load(file)
+    X, Y = data[0], data[1]
+    good_X_idx = (1 - (np.isnan(X[:, 0]) + np.isnan(X[:, 1]))).astype(np.bool)
+    good_Y_idx = (1 - (np.isnan(Y[:, 0]) + np.isnan(Y[:, 1]))).astype(np.bool)
+    good_idx = good_X_idx*good_Y_idx
+    X, Y = X[good_idx], Y[good_idx]
+    chunk_size = int(np.round(bin_width_s / 0.05)) #50 ms default bin width
+    X, Y = sum_over_chunks(X, chunk_size), sum_over_chunks(Y, chunk_size)/chunk_size
+    X = X[:, np.sum(X, axis=0) > min_spike_count]
+    return X, Y
+
+def get_active_channels(X, window_size, min_count):
+	good_idx = np.ones(X.shape[1], dtype=np.bool)
+	for i in range(len(X)):
+		if i - (window_size // 2) < 0:
+			start, end = 0, window_size
+		elif i + (window_size // 2) > len(X):
+			start, end = len(X) - window_size, len(X)
+		else:
+			start, end = i - window_size//2, i + window_size//2
+		good_idx *= (X[start:end, :].sum(axis=0) > min_count)
+	return good_idx
+
+def sliding_z_score(X, window_size):
+	N = X.shape[1]
+	X_ctd = np.zeros_like(X)
+	for i in range(len(X)):
+		if i - (window_size // 2) < 0:
+			start, end = 0, window_size
+		elif i + (window_size // 2) > len(X):
+			start, end = len(X) - window_size, len(X)
+		else:
+			start, end = i - window_size//2, i + window_size//2
+		mu, sigma = X[start:end, :].mean(axis=0), X[start:end, :].std(axis=0)
+		X_ctd[i, :] = (X[i] - mu)/sigma
+
+	X_ctd = (X_ctd - X_ctd.mean(axis=0))/X_ctd.std(axis=0)
+	return X_ctd
+"""

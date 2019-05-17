@@ -55,7 +55,10 @@ def run_analysis(X, Y, T_pi_vals, dim_vals, offset_vals, num_cv_folds, decoding_
         cross_cov_mats = calc_cross_cov_mats_from_data(X_train_ctd, T_max)
 
         #do PCA/SFA
-        pca_model = PCA(svd_solver='full').fit(np.concatenate(X_train_ctd)
+        if isinstance(X_train_ctd, list) or X_train_ctd.ndim == 3:
+            pca_model = PCA(svd_solver='full').fit(np.concatenate(X_train_ctd))
+        else:
+            pca_model = PCA(svd_solver='full').fit(X_train_ctd)
         sfa_model = SFA(1).fit(X_train_ctd)
 
         #make DCA object

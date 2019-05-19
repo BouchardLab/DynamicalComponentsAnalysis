@@ -1,7 +1,8 @@
-import numpy as np
 import h5py
 from math import ceil, floor
 import pickle
+import numpy as np
+import pandas as pd
 from scipy.interpolate import interp1d
 from scipy.signal import resample
 from scipy.ndimage import convolve1d
@@ -22,10 +23,10 @@ def sum_over_chunks(X, stride):
 
 def moving_center(X, n):
     if n % 2 == 0:
-        n += 1 
+        n += 1
     w = -np.ones(n) / n
     w[n // 2] += 1
-    X_ctd = convolve1d(X, w, axis=0)
+    X_ctd = convolve1d(X, w, axis=axis)
     return X_ctd
 
 def calc_autocorr_fns(X, T):
@@ -33,6 +34,25 @@ def calc_autocorr_fns(X, T):
 	for dt in range(T):
 		autocorr_fns[:, dt] = np.sum((X[dt:]*X[:len(X)-dt]), axis=0)/(len(X)-dt)
 	return autocorr_fns
+
+def load_kording_paper_data(filename, bin_width_s=0.1, min_spike_count=10,
+                            preprocess=True):
+    file = open(filename, "rb")
+    data = pickle.load(file)
+    X, Y = data[0], data[1]
+    good_X_idx = (1 - (np.isnan(X[:, 0]) + np.isnan(X[:, 1]))).astype(np.bool)
+    good_Y_idx = (1 - (np.isnan(Y[:, 0]) + np.isnan(Y[:, 1]))).astype(np.bool)
+    good_idx = good_X_idx*good_Y_idx
+    X, Y = X[good_idx], Y[good_idx]
+    chunk_size = int(np.round(bin_width_s / 0.05)) #50 ms default bin width
+    X, Y = sum_over_chunks(X, chunk_size), sum_over_chunks(Y, chunk_size)/chunk_size
+    X = X[:, np.sum(X, axis=0) > min_spike_count]
+    if preprocess:
+        X = np.sqrt(X)
+        X = moving_center(X, n=600)
+        Y -= Y.mean(axis=0, keepdims=True)
+        Y /= Y.std(axis=0, keepdims=True)
+    return {'neural': X, 'loc': Y}
 
 def load_weather_data(filename):
     df = pd.read_csv(filename)
@@ -50,17 +70,17 @@ def load_weather_data(filename):
     df = df.iloc[np.nonzero(dts > dts.min())[0].max() + 1:]
     Xfs = df.values.copy()
     ds_factor = 24
-    X = scipy.signal.resample(Xfs, Xfs.shape[0] // ds_factor, axis=0)
+    X = resample(Xfs, Xfs.shape[0] // ds_factor, axis=0)
     return X
 
 """
-Download .mat files from 
+Download .mat files from
 https://zenodo.org/record/583331#.XNtzE5NKjys
 Longest session (only has M1): indy_20160627_01.mat
 
 TODO: use downsampling w/ scipy.signal instead of decimation
 """
-def load_sabes_data(filename, bin_width_s=.100):
+def load_sabes_data(filename, bin_width_s=.05, preprocess=True):
     #Load MATLAB file
     with h5py.File(filename, "r") as f:
         #Get channel names (e.g. M1 001 or S1 001)
@@ -87,7 +107,7 @@ def load_sabes_data(filename, bin_width_s=.100):
             max_t = t[-1]
             num_bins = int(np.floor((max_t - t[0]) / bin_width_s))
             binned_spikes = np.zeros((num_bins, d), dtype=np.int)
-            for chan_idx in indices: #0,...,95, for example 
+            for chan_idx in indices: #0,...,95, for example
                 for unit_idx in range(1, num_sorted_units): #ignore hash!
                     spike_times = f[f["spikes"][unit_idx, chan_idx]][()]
                     if spike_times.shape == (2,):
@@ -100,6 +120,10 @@ def load_sabes_data(filename, bin_width_s=.100):
                     #make sure to ignore the hash here...
                     binned_spikes[bin_idx_unique, chan_idx * num_sorted_units + unit_idx - 1] += counts
             binned_spikes = binned_spikes[:, binned_spikes.sum(axis=0) > 0]
+            if preprocess:
+                binned_spikes = binned_spikes[:, binned_spikes.sum(axis=0) > 5000]
+                binned_spikes = np.sqrt(binned_spikes)
+                binned_spikes = moving_center(binned_spikes, n=600)
             result[region] = binned_spikes
         #Get cursor position
         cursor_pos = f["cursor_pos"][:].T
@@ -107,8 +131,19 @@ def load_sabes_data(filename, bin_width_s=.100):
         t_mid_bin = np.arange(len(binned_spikes))*bin_width_s + bin_width_s/2
         cursor_pos_interp = interp1d(t - t[0], cursor_pos, axis=0)
         cursor_interp = cursor_pos_interp(t_mid_bin)
+        if preprocess:
+            cursor_interp -= cursor_interp.mean(axis=0, keepdims=True)
+            cursor_interp /= cursor_interp.std(axis=0, keepdims=True)
         result["cursor"] = cursor_interp
         return result
+
+def load_accel_data(filename, preprocess=True):
+    df = pd.read_csv(filename)
+    X = df.values
+    if preprocess:
+        X -= X.mean(axis=0, keepdims=True)
+        X /= X.std(axis=0, keepdims=True)
+    return X
 
 class CrossValidate:
     def __init__(self, X, Y, num_folds, stack=True):
@@ -141,74 +176,3 @@ class CrossValidate:
 
         self.fold_idx += 1
         return X_train, X_test, Y_train, Y_test, fold_idx
-
-
-"""
-
-def load_mocap_data(filename, z_score=True):
-	angles = []
-	with open(filename) as f:
-		#Skip header
-		line = f.readline().strip()
-		while line != ":DEGREES":
-			line = f.readline().strip()
-		#Parse body
-		line = f.readline().strip()
-		cur_angles = None
-		while line:
-			if line.isdigit():
-				#New time-step
-				if cur_angles is not None:
-					angles.append(cur_angles)
-				cur_angles = []
-			else:
-				#Continue adding angles to current time-step
-				parts = line.split(" ")
-				joint_name = parts[0]
-				joint_angles = [float(angle_str) for angle_str in parts[1:]]
-				cur_angles += joint_angles
-			line = f.readline().strip()
-	angles = np.array(angles)
-	return angles
-
-def load_kording_paper_data(filename, bin_width_s=0.1, min_spike_count=10):
-    file = open(filename, "rb")
-    data = pickle.load(file)
-    X, Y = data[0], data[1]
-    good_X_idx = (1 - (np.isnan(X[:, 0]) + np.isnan(X[:, 1]))).astype(np.bool)
-    good_Y_idx = (1 - (np.isnan(Y[:, 0]) + np.isnan(Y[:, 1]))).astype(np.bool)
-    good_idx = good_X_idx*good_Y_idx
-    X, Y = X[good_idx], Y[good_idx]
-    chunk_size = int(np.round(bin_width_s / 0.05)) #50 ms default bin width
-    X, Y = sum_over_chunks(X, chunk_size), sum_over_chunks(Y, chunk_size)/chunk_size
-    X = X[:, np.sum(X, axis=0) > min_spike_count]
-    return X, Y
-
-def get_active_channels(X, window_size, min_count):
-	good_idx = np.ones(X.shape[1], dtype=np.bool)
-	for i in range(len(X)):
-		if i - (window_size // 2) < 0:
-			start, end = 0, window_size
-		elif i + (window_size // 2) > len(X):
-			start, end = len(X) - window_size, len(X)
-		else:
-			start, end = i - window_size//2, i + window_size//2
-		good_idx *= (X[start:end, :].sum(axis=0) > min_count)
-	return good_idx
-
-def sliding_z_score(X, window_size):
-	N = X.shape[1]
-	X_ctd = np.zeros_like(X)
-	for i in range(len(X)):
-		if i - (window_size // 2) < 0:
-			start, end = 0, window_size
-		elif i + (window_size // 2) > len(X):
-			start, end = len(X) - window_size, len(X)
-		else:
-			start, end = i - window_size//2, i + window_size//2
-		mu, sigma = X[start:end, :].mean(axis=0), X[start:end, :].std(axis=0)
-		X_ctd[i, :] = (X[i] - mu)/sigma
-
-	X_ctd = (X_ctd - X_ctd.mean(axis=0))/X_ctd.std(axis=0)
-	return X_ctd
-"""

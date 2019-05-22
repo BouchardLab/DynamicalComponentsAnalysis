@@ -110,3 +110,4 @@ __pycache__/
 *.hdf5
 *.pdf
 *.mat
+*.npz

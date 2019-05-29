@@ -15,41 +15,43 @@ def linear_decode_r2(X_train, Y_train, X_test, Y_test, decoding_window=1, offset
     This will work with batched training data, but the testing data has to be
     one sequence.
     """
+    if isinstance(X_train, np.ndarray) and X_train.ndim == 2:
+        X_train = [X_train]
+    if isinstance(Y_train, np.ndarray) and Y_train.ndim == 2:
+        Y_train = [Y_train]
 
-    if isinstance(X_train, list) or X_train.ndim == 3:
-        X_train_lags = [form_lag_matrix(Xi, decoding_window) for Xi in X_train]
-    else:
-        X_train_lags = form_lag_matrix(X_train, decoding_window)
+    X_train_lags = [form_lag_matrix(Xi, decoding_window) for Xi in X_train]
     X_test_lags = form_lag_matrix(X_test, decoding_window)
 
-    if isinstance(Y_train, list) or Y_train.ndim == 3:
-        Y_train = [Yi[decoding_window // 2:] for Yi in Y_train]
-        Y_train = [Yi[:len(Xi)] for Yi, Xi in zip(Y_train, X_train_lags)]
+    Y_train = [Yi[decoding_window // 2:] for Yi in Y_train]
+    Y_train = [Yi[:len(Xi)] for Yi, Xi in zip(Y_train, X_train_lags)]
+    if offset >= 0:
         Y_train = [Yi[offset:] for Yi in Y_train]
     else:
-        Y_train = Y_train[decoding_window // 2:]
-        Y_train = Y_train[:len(X_test_lags)]
-        Y_train = Y_train[offset:]
+        Y_train = [Yi[:Yi.shape[0]+offset] for Yi in Y_train]
+
     Y_test = Y_test[decoding_window // 2:]
     Y_test = Y_test[:len(X_test_lags)]
-    Y_test = Y_test[offset:]
-
-    if isinstance(X_train, list) or X_train.ndim == 3:
-        X_train_lags = [Xi[:Xi.shape[0]-offset] for Xi in X_train_lags]
+    if offset >= 0:
+        Y_test = Y_test[offset:]
     else:
-        X_train_lags = X_train_lags[:X_train_lags.shape[0]-offset]
-    X_test_lags = X_test_lags[:X_test_lags.shape[0]-offset]
+        Y_test = Y_test[:Y_test.shape[0]+offset]
 
-    if isinstance(X_train, list) or X_train.ndim == 3:
-        if len(Y_train) == 1:
-            X_train_lags = X_train_lags[0]
-        else:
-            X_train_lags = np.concatenate(X_train_lags)
-    if isinstance(Y_train, list) or Y_train.ndim == 3:
-        if len(Y_train) == 1:
-            Y_train = Y_train[0]
-        else:
-            Y_train = np.concatenate(Y_train)
+    if offset >= 0:
+        X_train_lags = [Xi[:Xi.shape[0]-offset] for Xi in X_train_lags]
+        X_test_lags = X_test_lags[:X_test_lags.shape[0]-offset]
+    else:
+        X_train_lags = [Xi[-offset:] for Xi in X_train_lags]
+        X_test_lags = X_test_lags[-offset:]
+
+    if len(X_train) == 1:
+        X_train_lags = X_train_lags[0]
+    else:
+        X_train_lags = np.concatenate(X_train_lags)
+    if len(Y_train) == 1:
+        Y_train = Y_train[0]
+    else:
+        Y_train = np.concatenate(Y_train)
 
     model = LR().fit(X_train_lags, Y_train)
     r2 = model.score(X_test_lags, Y_test)

@@ -24,7 +24,8 @@ def decoding_fix_axes(fig_width=10, fig_height=5, wpad_left=0, wpad_right=0.,
     axes = (ax1, ax2, ax3, ax4, ax5, ax6, ax7, ax8)
     return fig, axes
 
-def scatter_r2_vals(r2_vals, T_pi_idx, dim_vals, offset_vals, min_val=None, max_val=None,
+def scatter_r2_vals(r2_vals, T_pi_idx, dim_vals, offset_vals, T_pi_vals,
+                    min_val=None, max_val=None,
                     legend_both_cols=True, timestep=1, timestep_units="",
                     ax=None, xlabel=True, ylabel=True, title=None, legend=True,
                     bbox_to_anchor=None, loc=None):
@@ -52,7 +53,9 @@ def scatter_r2_vals(r2_vals, T_pi_idx, dim_vals, offset_vals, min_val=None, max_
 
     #plot diagonal line
     t = np.linspace(min_val, max_val, 100)
-    ax.plot(t, t, c="black", linestyle="--", zorder=0)
+    ax.plot(t, t, c="black", linestyle="--", zorder=0, linewidth=1.)
+    ax.text(.05, .9, 'T = {} bins'.format(T_pi_vals[T_pi_idx]),
+            transform=ax.transAxes, fontsize=style.ticklabel_fontsize)
 
     #make scatter
     markers = ['x', '+', 'v', 's']
@@ -60,13 +63,14 @@ def scatter_r2_vals(r2_vals, T_pi_idx, dim_vals, offset_vals, min_val=None, max_
         for offset_idx in range(len(offset_vals)):
             x, y = pca_mean[dim_idx, offset_idx], dca_mean[dim_idx, offset_idx]
             ax.scatter(x, y, c=[dim_colors[dim_idx]],
-                    marker=markers[offset_idx], s=16)
+                    marker=markers[offset_idx], s=12)
 
     #make legend
     #only plot dim vals if we're supposed to
     if legend_both_cols:
         for dim_idx in range(len(dim_vals)):
             dim_str = "dim: " + str(dim_vals[dim_idx])
+            dim_str = str(dim_vals[dim_idx])
             ax.scatter(-1, -1, c=[dim_colors[dim_idx]], marker="o",
                     label=dim_str, s=16)
         ncol = 2
@@ -75,13 +79,18 @@ def scatter_r2_vals(r2_vals, T_pi_idx, dim_vals, offset_vals, min_val=None, max_
     #always plot offset (lag) vals
     for offset_idx in range(len(offset_vals)):
         lag_str = "lag: " + str(offset_vals[offset_idx] * timestep) + " " + timestep_units
+        lag_str = '{} {}'.format(str(offset_vals[offset_idx] * timestep), timestep_units)
         ax.scatter(-1, -1, c="black", marker=markers[offset_idx],
                 label=lag_str, s=16)
     if legend:
-        ax.legend(frameon=True, ncol=ncol, columnspacing=0.5,
-                  handletextpad=0, fontsize=style.ticklabel_fontsize,
-                  fancybox=True,
-                  bbox_to_anchor=bbox_to_anchor, loc=loc)
+        ax.legend(ncol=ncol, columnspacing=0.5,
+                  handletextpad=0, fontsize=style.ticklabel_fontsize-1,
+                  fancybox=True, markerscale=.8, frameon=True,
+                  bbox_to_anchor=bbox_to_anchor, loc=loc, handlelength=1.25)
+        ax.text(.6, .5, 'dim',
+                transform=ax.transAxes, fontsize=style.ticklabel_fontsize)
+        ax.text(.85, .5, 'lag',
+                transform=ax.transAxes, fontsize=style.ticklabel_fontsize)
 
     #add labels/titles
     if xlabel:
@@ -93,7 +102,7 @@ def scatter_r2_vals(r2_vals, T_pi_idx, dim_vals, offset_vals, min_val=None, max_
     if title is not None:
         ax.set_title(title, fontsize=style.title_fontsize)
 
-def plot_pi_vs_T(r2_vals, T_pi_vals, dim_vals, offset_idx=0, min_max_val=None,
+def plot_pi_vs_T(r2_vals, T_pi_vals, dim_vals, offset_vals, offset_idx=0, min_max_val=None,
                  legend=True, timestep=1, timestep_units="", ax=None,
                  xlabel=True, ylabel=True, bbox_to_anchor=None, loc=None):
 
@@ -108,13 +117,14 @@ def plot_pi_vs_T(r2_vals, T_pi_vals, dim_vals, offset_idx=0, min_max_val=None,
     #set plot bounds
     if min_max_val is None:
         min_max_val = np.max(np.abs(improvement_mean))
-    ax.set_ylim([-min_max_val, min_max_val])
-    ax.set_yticks([-min_max_val, min_max_val])
-    ax.set_yticklabels([-min_max_val, min_max_val], fontsize=style.ticklabel_fontsize)
+    ax.set_ylim([-min_max_val/2., min_max_val])
+    ax.set_yticks([-min_max_val/2., min_max_val])
+    ax.set_yticklabels([-min_max_val/2., min_max_val], fontsize=style.ticklabel_fontsize)
+    ax.text(.4, .1, 'lag = {} bins'.format(offset_vals[offset_idx]),
+            transform=ax.transAxes, fontsize=style.ticklabel_fontsize)
 
     #set ticks
-    ax.set_yticks([-min_max_val, min_max_val])
-    x_vals = T_pi_vals * timestep
+    x_vals = T_pi_vals
     x_ticks = x_vals[1::2]
     ax.set_xticks(x_ticks)
     ax.set_xticklabels(x_ticks.astype(np.int), fontsize=style.ticklabel_fontsize)
@@ -126,7 +136,7 @@ def plot_pi_vs_T(r2_vals, T_pi_vals, dim_vals, offset_idx=0, min_max_val=None,
     for dim_idx in range(len(dim_vals)):
         dim_str = "dim: " + str(dim_vals[dim_idx])
         ax.plot(x_vals, improvement_mean[dim_idx],
-                color=dim_colors[dim_idx])
+                color=dim_colors[dim_idx], linewidth=1.)
         ax.scatter(x_vals, improvement_mean[dim_idx],
                 color=dim_colors[dim_idx],
                 marker=".", s=16,
@@ -139,7 +149,7 @@ def plot_pi_vs_T(r2_vals, T_pi_vals, dim_vals, offset_idx=0, min_max_val=None,
 
     #add labels/titles
     if xlabel:
-        ax.set_xlabel(r"$T_{PI}$ (" + timestep_units + ")",
+        ax.set_xlabel(r"T ({} {} bins)".format(timestep, timestep_units),
                 fontsize=style.axis_label_fontsize, labelpad=0)
     if ylabel:
         ax.set_ylabel("$\Delta R^2$ improvement\nover SFA",

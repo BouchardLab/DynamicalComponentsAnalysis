@@ -2,6 +2,7 @@ import numpy as np
 import h5py
 from sklearn.linear_model import LinearRegression as LR
 from sklearn.decomposition import PCA
+from scipy.stats import special_ortho_group as sog
 
 from .cov_util import calc_cross_cov_mats_from_data
 from .data_util import CrossValidate, form_lag_matrix
@@ -125,4 +126,83 @@ def run_analysis(X, Y, T_pi_vals, dim_vals, offset_vals, num_cv_folds, decoding_
                     offset = offset_vals[offset_idx]
                     r2_dca = linear_decode_r2(X_train_dca, Y_train_ctd, X_test_dca, Y_test_ctd, decoding_window=decoding_window, offset=offset)
                     results[fold_idx, dim_idx, offset_idx, T_pi_idx + 2] = r2_dca
+    return results
+
+
+def random_complement(proj, size=1, random_state=None):
+    """Computes a random vector in the orthogonal complement to proj.
+
+    Parameters
+    ----------
+    proj : ndarray (full dim, low dim)
+        Projection matrix.
+    random_state : NumPy random state (optional)
+        Random state for rng.
+
+    Returns
+    -------
+    comp_vec : ndarray (full dim, 1)
+        Random vector in the complement space.
+    """
+    dim, pdim = proj.shape
+    if pdim >= dim:
+        raise ValueError
+    proj_full = np.concatenate([proj, np.zeros((dim, dim-pdim))], axis=1)
+    proj_full_comp = np.concatenate([np.zeros((dim, pdim)),
+                                     np.linalg.svd(proj_full)[0][:, pdim:]], axis=1)
+    rots = sog.rvs(dim-pdim, size=size, random_state=random_state)
+    if size == 1:
+        rots = rots[np.newaxis]
+    comp_vec = np.zeros((dim, size))
+    for ii in range(size):
+        comp_vec[:, ii] = proj_full_comp[:, pdim:].dot(rots[ii])[:, -1]
+    return comp_vec
+
+
+def run_dim_analysis_dca(X, Y, T_pi, dim_vals, offset, num_cv_folds, decoding_window,
+                 n_init=1, verbose=False, n_null=1000):
+
+    results = np.zeros(num_cv_folds, len(dim_vals))
+    null_results = np.zeros(num_cv_folds, len(dim_vals)-1, n_null)
+    min_std = 1e-6
+    good_cols = (X.std(axis=0) > min_std)
+    X = X[:, good_cols]
+    #loop over CV folds
+    cv = CrossValidate(X, Y, num_cv_folds, stack=False)
+    for X_train, X_test, Y_train, Y_test, fold_idx in cv:
+        X_test = X_test
+        Y_test = Y_test
+        if verbose:
+            print("fold", fold_idx + 1, "of", num_cv_folds)
+
+        #mean-center X and Y
+        X_mean = np.concatenate(X_train).mean(axis=0, keepdims=True)
+        X_train_ctd = [Xi - X_mean for Xi in X_train]
+        X_test_ctd = X_test - X_mean
+        Y_mean = np.concatenate(Y_train).mean(axis=0, keepdims=True)
+        Y_train_ctd = [Yi - Y_mean for Yi in Y_train]
+        Y_test_ctd = Y_test - Y_mean
+
+        #compute cross-cov mats for DCA
+        cross_cov_mats = calc_cross_cov_mats_from_data(X_train_ctd, 2 * T_pi)
+
+        #make DCA object
+        opt = ComplexityComponentsAnalysis()
+
+        #loop over dimensionalities
+        for dim_idx in range(len(dim_vals)):
+            dim = dim_vals[dim_idx]
+            if verbose:
+                print("dim", dim_idx + 1, "of", len(dim_vals))
+
+            opt.cross_covs = cross_cov_mats
+            opt.fit_projection(d=dim, n_init=n_init)
+            V_dca = opt.coef_
+
+            #compute DCA R2 over offsets
+            X_train_dca = [np.dot(Xi, V_dca) for Xi in X_train_ctd]
+            X_test_dca = np.dot(X_test_ctd, V_dca)
+            r2_dca = linear_decode_r2(X_train_dca, Y_train_ctd, X_test_dca, Y_test_ctd, decoding_window=decoding_window, offset=offset)
+            results[fold_idx, dim_idx] = r2_dca
+
     return results

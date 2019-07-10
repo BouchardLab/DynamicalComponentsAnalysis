@@ -147,9 +147,13 @@ def random_complement(proj, size=1, random_state=None):
     dim, pdim = proj.shape
     if pdim >= dim:
         raise ValueError
+
+    # Create complement space
     proj_full = np.concatenate([proj, np.zeros((dim, dim-pdim))], axis=1)
     proj_full_comp = np.concatenate([np.zeros((dim, pdim)),
                                      np.linalg.svd(proj_full)[0][:, pdim:]], axis=1)
+
+    # Sample from random vectors
     rots = sog.rvs(dim-pdim, size=size, random_state=random_state)
     if size == 1:
         rots = rots[np.newaxis]
@@ -160,10 +164,11 @@ def random_complement(proj, size=1, random_state=None):
 
 
 def run_dim_analysis_dca(X, Y, T_pi, dim_vals, offset, num_cv_folds, decoding_window,
-                 n_init=1, verbose=False, n_null=1000):
+                 n_init=1, verbose=False, n_null=1000, seed=20190710):
 
-    results = np.zeros(num_cv_folds, len(dim_vals))
-    null_results = np.zeros(num_cv_folds, len(dim_vals)-1, n_null)
+    rng = np.random.RandomState(seed)
+    results = np.zeros((num_cv_folds, len(dim_vals)))
+    null_results = np.zeros((num_cv_folds, len(dim_vals)-1, n_null))
     min_std = 1e-6
     good_cols = (X.std(axis=0) > min_std)
     X = X[:, good_cols]
@@ -204,5 +209,14 @@ def run_dim_analysis_dca(X, Y, T_pi, dim_vals, offset, num_cv_folds, decoding_wi
             X_test_dca = np.dot(X_test_ctd, V_dca)
             r2_dca = linear_decode_r2(X_train_dca, Y_train_ctd, X_test_dca, Y_test_ctd, decoding_window=decoding_window, offset=offset)
             results[fold_idx, dim_idx] = r2_dca
+            comp_vecs = random_complement(V_dca, n_null, rng)
+            if dim_idx < len(dim_vals) - 1:
+                for ii in range(n_null):
+                    vec = comp_vecs[:, [ii]]
+                    Vp = np.concatenate([V_dca, vec], axis=1)
+                    X_train_dca = [np.dot(Xi, Vp) for Xi in X_train_ctd]
+                    X_test_dca = np.dot(X_test_ctd, Vp)
+                    r2_dca = linear_decode_r2(X_train_dca, Y_train_ctd, X_test_dca, Y_test_ctd, decoding_window=decoding_window, offset=offset)
+                    null_results[fold_idx, dim_idx, ii] = r2_dca
 
-    return results
+    return results, null_results

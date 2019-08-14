@@ -2,7 +2,7 @@ import numpy as np
 from scipy.linalg import block_diag
 from numpy.testing import (assert_allclose)
 
-from cca.methods_comparison import (make_block_diag, block_dot_A, block_dot_B,
+from dca.methods_comparison import (make_block_diag, block_dot_A, block_dot_B,
                                     block_dot_AB, matrix_inversion_identity)
 
 def test_make_block_diag():

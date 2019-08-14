@@ -8,7 +8,7 @@ import torch.nn.functional as F
 
 from .cov_util import calc_cross_cov_mats_from_data, calc_pi_from_cross_cov_mats
 
-__all__ = ["ComplexityComponentsAnalysis"]
+__all__ = ["DynamicalComponentsAnalysis"]
 
 def ortho_reg_fn(V, ortho_lambda):
     """Regularization term which encourages the basis vectors in the
@@ -67,8 +67,8 @@ def build_loss(cross_cov_mats, d, lambda_param=1):
     return loss
 
 
-class ComplexityComponentsAnalysis(object):
-    """Complexity Components Analysis.
+class DynamicalComponentsAnalysis(object):
+    """Dynamical Components Analysis.
 
     Runs CCA on multidimensional timeseries data X to discover a projection
     onto a d-dimensional subspace which maximizes the complexity of the d-dimensional
@@ -240,7 +240,7 @@ class ComplexityComponentsAnalysis(object):
     def score(self):
         return calc_pi_from_cross_cov_mats(self.cross_covs, self.coef_)
 
- 
+
 def make_cepts2(X, T_pi):
     """Calculate the squared real cepstral coefficents."""
     Y = F.unfold(X, kernel_size=[T_pi, 1], stride=T_pi)

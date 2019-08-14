@@ -1,2 +1,2 @@
 from .methods_comparison import *
-from .cca import *
+from .dca import *

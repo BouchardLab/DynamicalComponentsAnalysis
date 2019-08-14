@@ -11,11 +11,11 @@ from functools import partial
 import torch
 from torch.nn import functional as F
 
-from .cca import ortho_reg_fn
+from .dca import ortho_reg_fn
 
 __all__ = ['GaussianProcessFactorAnalysis',
            'SlowFeatureAnalysis',
-           'knnComplexityComponentsAnalysis',
+           'knnDynamicalComponentsAnalysis',
            'ForcastableComponentsAnalysis']
 
 
@@ -167,8 +167,8 @@ class ForcastableComponentsAnalysis(object):
         return ent_loss_fn(X, self.coef_, self.T)
 
 
-class knnComplexityComponentsAnalysis(object):
-    """Complexity Components Analysis.
+class knnDynamicalComponentsAnalysis(object):
+    """Dynamical Components Analysis.
 
     Runs CCA on multidimensional timeseries data X to discover a projection
     onto a d-dimensional subspace which maximizes the complexity of the d-dimensional

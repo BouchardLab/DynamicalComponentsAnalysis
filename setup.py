@@ -18,23 +18,6 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
 setup(
-    name='cca',
-    description='Complexity Components Analysis.',
+    name='dca',
+    description='Dynamical Components Analysis.',
     long_description=long_description)
-
-"""
-    install_requires = [
-      'h5py',
-      'numpy',
-      'scipy',
-      'tensorflow']
-    )
-# To provide executable scripts, use entry points in preference to the
-# "scripts" keyword. Entry points provide cross-platform support and allow
-# pip to create the appropriate form of executable for the target platform.
-entry_points={
-    'console_scripts': [
-        'ecog=bin:main',
-    ],
-},
-"""

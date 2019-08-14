@@ -7,7 +7,7 @@ from scipy.stats import special_ortho_group as sog
 from .cov_util import calc_cross_cov_mats_from_data
 from .data_util import CrossValidate, form_lag_matrix
 from .methods_comparison import SlowFeatureAnalysis as SFA
-from .cca import ComplexityComponentsAnalysis
+from .dca import DynamicalComponentsAnalysis
 
 
 def linear_decode_r2(X_train, Y_train, X_test, Y_test, decoding_window=1, offset=0):
@@ -92,7 +92,7 @@ def run_analysis(X, Y, T_pi_vals, dim_vals, offset_vals, num_cv_folds, decoding_
         sfa_model = SFA(1).fit(X_train_ctd)
 
         #make DCA object
-        opt = ComplexityComponentsAnalysis()
+        opt = DynamicalComponentsAnalysis()
 
         #loop over dimensionalities
         for dim_idx in range(len(dim_vals)):
@@ -192,7 +192,7 @@ def run_dim_analysis_dca(X, Y, T_pi, dim_vals, offset, num_cv_folds, decoding_wi
         cross_cov_mats = calc_cross_cov_mats_from_data(X_train_ctd, 2 * T_pi)
 
         #make DCA object
-        opt = ComplexityComponentsAnalysis()
+        opt = DynamicalComponentsAnalysis()
 
         #loop over dimensionalities
         for dim_idx in range(len(dim_vals)):

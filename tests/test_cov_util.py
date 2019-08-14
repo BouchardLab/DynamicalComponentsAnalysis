@@ -2,7 +2,7 @@ import numpy as np
 
 from numpy.testing import (assert_allclose)
 
-from cca.cov_util import (calc_cross_cov_mats_from_cov,
+from dca.cov_util import (calc_cross_cov_mats_from_cov,
                           calc_cov_from_cross_cov_mats)
 
 

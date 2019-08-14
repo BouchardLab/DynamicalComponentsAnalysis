@@ -10,6 +10,7 @@ from .cov_util import calc_cross_cov_mats_from_data, calc_pi_from_cross_cov_mats
 
 __all__ = ["DynamicalComponentsAnalysis"]
 
+
 def ortho_reg_fn(V, ortho_lambda):
     """Regularization term which encourages the basis vectors in the
     columns of V to be orthonormal.
@@ -29,11 +30,13 @@ def ortho_reg_fn(V, ortho_lambda):
     d = V.shape[1]
 
     if use_torch:
-        reg_val = ortho_lambda * torch.sum((torch.mm(V.t(), V) - torch.eye(d, device=V.device, dtype=V.dtype))**2)
+        reg_val = ortho_lambda * torch.sum((torch.mm(V.t(), V) -
+                                            torch.eye(d, device=V.device, dtype=V.dtype))**2)
     else:
         reg_val = ortho_lambda * np.sum((np.dot(V.T, V) - np.eye(d))**2)
 
     return reg_val
+
 
 def build_loss(cross_cov_mats, d, lambda_param=1):
     """Constructs a loss function which gives the (negative) predictive
@@ -57,7 +60,7 @@ def build_loss(cross_cov_mats, d, lambda_param=1):
        columns are basis vectors, and outputs the negative predictive information
        corresponding to that projection (plus regularization term).
     """
-    N = cross_cov_mats.shape[1] #or cross_cov_mats.shape[2]
+    N = cross_cov_mats.shape[1]
 
     def loss(V_flat):
         V = V_flat.reshape(N, d)
@@ -93,7 +96,7 @@ class DynamicalComponentsAnalysis(object):
         self.n_init = n_init
         self.tol = tol
         self.ortho_lambda = ortho_lambda
-        self.verbose=verbose
+        self.verbose = verbose
         self.device = device
         self.dtype = dtype
         self.cross_covs = None
@@ -105,7 +108,7 @@ class DynamicalComponentsAnalysis(object):
         else:
             self.T = T
 
-        cross_covs = calc_cross_cov_mats_from_data(X, 2*self.T,
+        cross_covs = calc_cross_cov_mats_from_data(X, 2 * self.T,
                                                    regularization=regularization,
                                                    reg_ops=reg_ops)
         self.cross_covs = torch.tensor(cross_covs, device=self.device, dtype=self.dtype)
@@ -152,50 +155,52 @@ class DynamicalComponentsAnalysis(object):
 
         c = self.cross_covs
         if not isinstance(c, torch.Tensor):
-        	c = torch.tensor(c, device=self.device, dtype=self.dtype)
+            c = torch.tensor(c, device=self.device, dtype=self.dtype)
 
         if self.use_scipy:
             if self.verbose or record_V:
                 if record_V:
                     self.V_seq = [V_init]
+
                 def callback(v_flat):
                     v_flat_torch = torch.tensor(v_flat,
                                                 requires_grad=True,
                                                 device=self.device,
                                                 dtype=self.dtype)
                     v_torch = v_flat_torch.reshape(N, d)
-                    #optimizer.zero_grad()
                     loss = build_loss(c, d)(v_torch)
                     reg_val = ortho_reg_fn(v_torch, self.ortho_lambda)
-                    loss_no_reg = loss - reg_val
                     loss = loss.detach().cpu().numpy()
                     reg_val = reg_val.detach().cpu().numpy()
                     if record_V:
                         self.V_seq.append(v_flat.reshape(N, d))
                     if self.verbose:
-                        print("PI: {} nats, reg: {}".format(str(np.round(-loss, 4)), str(np.round(reg_val, 4))))
-
+                        print("PI: {} nats, reg: {}".format(str(np.round(-loss, 4)),
+                                                            str(np.round(reg_val, 4))))
 
                 callback(V_init)
             else:
                 callback = None
+
             def f_df(v_flat):
                 v_flat_torch = torch.tensor(v_flat,
                                             requires_grad=True,
                                             device=self.device,
                                             dtype=self.dtype)
                 v_torch = v_flat_torch.reshape(N, d)
-                #optimizer.zero_grad()
                 loss = build_loss(c, d)(v_torch)
                 loss.backward()
                 grad = v_flat_torch.grad
-                return loss.detach().cpu().numpy().astype(float), grad.detach().cpu().numpy().astype(float)
+                return (loss.detach().cpu().numpy().astype(float),
+                        grad.detach().cpu().numpy().astype(float))
             opt = minimize(f_df, V_init.ravel(), method='L-BFGS-B', jac=True,
                            options={'disp': self.verbose, 'ftol': self.tol},
                            callback=callback)
             v = opt.x.reshape(N, d)
         else:
-            optimizer = torch.optim.LBFGS([v], max_eval=10**10, max_iter=10**10, tolerance_grad=1e-10, tolerance_change=1e-10)
+            optimizer = torch.optim.LBFGS([v], max_eval=10**10, max_iter=10**10,
+                                          tolerance_grad=1e-10, tolerance_change=1e-10)
+
             def closure():
                 optimizer.zero_grad()
                 loss = build_loss(c, d)(v)
@@ -261,11 +266,12 @@ def make_cepts2(X, T_pi):
     cepts = torch.sqrt(cepts[:, :, 0]**2 + cepts[:, :, 1]**2)
     return cepts**2
 
-"""
-This is well-tested when X has shape (# time steps, 1).
-Otherwise, behavior has not been considered.
-"""
+
 def pi_fft(X, proj, T_pi):
+    """
+    This is well-tested when X has shape (# time steps, 1).
+    Otherwise, behavior has not been considered.
+    """
     if not isinstance(X, torch.Tensor):
         X = torch.Tensor(X)
     if not isinstance(proj, torch.Tensor):
@@ -304,7 +310,7 @@ class DynamicalComponentsAnalysisFFT(object):
         self.n_init = n_init
         self.tol = tol
         self.ortho_lambda = ortho_lambda
-        self.verbose=verbose
+        self.verbose = verbose
         self.device = device
         self.dtype = dtype
         self.cross_covs = None
@@ -347,9 +353,10 @@ class DynamicalComponentsAnalysisFFT(object):
 
         Xt = X
         if not isinstance(Xt, torch.Tensor):
-        	Xt = torch.tensor(Xt, device=self.device, dtype=self.dtype)
+            Xt = torch.tensor(Xt, device=self.device, dtype=self.dtype)
 
         if self.verbose:
+
             def callback(v_flat):
                 v_flat_torch = torch.tensor(v_flat,
                                             requires_grad=True,
@@ -365,6 +372,7 @@ class DynamicalComponentsAnalysisFFT(object):
             callback(V_init)
         else:
             callback = None
+
         def f_df(v_flat):
             v_flat_torch = torch.tensor(v_flat,
                                         requires_grad=True,
@@ -376,10 +384,11 @@ class DynamicalComponentsAnalysisFFT(object):
             loss = -pi + reg_val
             loss.backward()
             grad = v_flat_torch.grad
-            return loss.detach().cpu().numpy().astype(float), grad.detach().cpu().numpy().astype(float)
+            return (loss.detach().cpu().numpy().astype(float),
+                    grad.detach().cpu().numpy().astype(float))
         opt = minimize(f_df, V_init.ravel(), method='L-BFGS-B', jac=True,
-                           options={'disp': self.verbose, 'ftol': self.tol},
-                           callback=callback)
+                       options={'disp': self.verbose, 'ftol': self.tol},
+                       callback=callback)
         v = opt.x.reshape(N, d)
 
         # Orthonormalize the basis prior to returning it

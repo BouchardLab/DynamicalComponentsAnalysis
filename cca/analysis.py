@@ -168,7 +168,7 @@ def run_dim_analysis_dca(X, Y, T_pi, dim_vals, offset, num_cv_folds, decoding_wi
 
     rng = np.random.RandomState(seed)
     results = np.zeros((num_cv_folds, len(dim_vals)))
-    null_results = np.zeros((num_cv_folds, len(dim_vals)-1, n_null))
+    null_results = np.zeros((num_cv_folds, len(dim_vals)-2, n_null))
     min_std = 1e-6
     good_cols = (X.std(axis=0) > min_std)
     X = X[:, good_cols]
@@ -209,8 +209,8 @@ def run_dim_analysis_dca(X, Y, T_pi, dim_vals, offset, num_cv_folds, decoding_wi
             X_test_dca = np.dot(X_test_ctd, V_dca)
             r2_dca = linear_decode_r2(X_train_dca, Y_train_ctd, X_test_dca, Y_test_ctd, decoding_window=decoding_window, offset=offset)
             results[fold_idx, dim_idx] = r2_dca
-            comp_vecs = random_complement(V_dca, n_null, rng)
-            if dim_idx < len(dim_vals) - 1:
+            if dim_idx < len(dim_vals) - 2:
+                comp_vecs = random_complement(V_dca, n_null, rng)
                 for ii in range(n_null):
                     vec = comp_vecs[:, [ii]]
                     Vp = np.concatenate([V_dca, vec], axis=1)

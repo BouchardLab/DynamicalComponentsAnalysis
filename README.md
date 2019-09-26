@@ -1,4 +1,4 @@
-# DynamicalComponentsAnalysis
+# Dynamical Components Analysis
 
 Implementation of the methods and analyses in [Unsupervised Discovery of Temporal Structure in Noisy Data with Dynamical Components Analysis](https://arxiv.org/abs/1905.09944).
 

@@ -111,3 +111,5 @@ __pycache__/
 *.pdf
 *.mat
 *.npz
+data/accel/*
+notebooks/kf_data/*

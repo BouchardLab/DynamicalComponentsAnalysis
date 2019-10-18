@@ -35,7 +35,7 @@ def scatter_r2_vals(r2_vals, T_pi_idx, dim_vals, offset_vals, T_pi_vals,
                     min_val=None, max_val=None,
                     legend_both_cols=True, timestep=1, timestep_units="",
                     ax=None, xlabel=True, ylabel=True, title=None, legend=True,
-                    bbox_to_anchor=None, loc=None):
+                    bbox_to_anchor=None, loc=None, pca_label="PCA"):
     if ax is None:
         _, ax = plt.subplots(1, 1, figsize=(5, 5))
 
@@ -101,7 +101,7 @@ def scatter_r2_vals(r2_vals, T_pi_idx, dim_vals, offset_vals, T_pi_vals,
 
     # add labels/titles
     if xlabel:
-        ax.set_xlabel("PCA $R^2$", fontsize=style.axis_label_fontsize,
+        ax.set_xlabel(pca_label + " $R^2$", fontsize=style.axis_label_fontsize,
                       labelpad=-8)
     if ylabel:
         ax.set_ylabel("DCA $R^2$", fontsize=style.axis_label_fontsize,

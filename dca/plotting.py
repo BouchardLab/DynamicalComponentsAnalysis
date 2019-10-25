@@ -31,6 +31,25 @@ def decoding_fix_axes(fig_width=10, fig_height=5, wpad_left=0, wpad_right=0.,
     return fig, axes
 
 
+def decoding_fix_axes2(fig_width=10, fig_height=5, wpad_left=0, wpad_right=0.,
+                      wpad_mid=.1, hpad_bot=0, hpad_mid=.1):
+    fig = plt.figure(figsize=(fig_width, fig_height))
+    sq_width = (1 - wpad_left - wpad_right -  wpad_mid) / 2
+    sq_height = sq_width * fig_width / fig_height
+
+    # top row
+    ax1 = fig.add_axes((wpad_left, hpad_bot + sq_height + hpad_mid, sq_width, sq_height))
+    ax2 = fig.add_axes((wpad_left + sq_width + wpad_mid, hpad_bot + sq_height + hpad_mid,
+                        sq_width, sq_height))
+
+    # bottom row
+    ax3 = fig.add_axes((wpad_left, hpad_bot, sq_width, sq_height))
+    ax4 = fig.add_axes((wpad_left + sq_width + wpad_mid, hpad_bot, sq_width, sq_height))
+
+    axes = (ax1, ax2, ax3, ax4)
+    return fig, axes
+
+
 def scatter_r2_vals(r2_vals, T_pi_idx, dim_vals, offset_vals, T_pi_vals,
                     min_val=None, max_val=None,
                     legend_both_cols=True, timestep=1, timestep_units="",
@@ -59,7 +78,7 @@ def scatter_r2_vals(r2_vals, T_pi_idx, dim_vals, offset_vals, T_pi_vals,
     ax.set_yticklabels([min_val, max_val], fontsize=style.ticklabel_fontsize)
 
     # plot diagonal line
-    t = np.linspace(min_val, max_val, 100)
+    t = [min_val, max_val]
     ax.plot(t, t, c="black", linestyle="--", zorder=0, linewidth=1.)
     ax.text(.05, .9, 'T = {} bins'.format(T_pi_vals[T_pi_idx]),
             transform=ax.transAxes, fontsize=style.ticklabel_fontsize)
@@ -94,9 +113,9 @@ def scatter_r2_vals(r2_vals, T_pi_idx, dim_vals, offset_vals, T_pi_vals,
                   handletextpad=0, fontsize=style.ticklabel_fontsize - 1,
                   fancybox=True, markerscale=.8, frameon=True,
                   bbox_to_anchor=bbox_to_anchor, loc=loc, handlelength=1.25)
-        ax.text(.6, .5, 'dim',
+        ax.text(bbox_to_anchor[0]+.125, bbox_to_anchor[1]-.025, 'dim', ha='left', va='bottom',
                 transform=ax.transAxes, fontsize=style.ticklabel_fontsize)
-        ax.text(.85, .5, 'lag',
+        ax.text(bbox_to_anchor[0] + .35, bbox_to_anchor[1]-.025, 'lag', ha='left', va='bottom',
                 transform=ax.transAxes, fontsize=style.ticklabel_fontsize)
 
     # add labels/titles
@@ -110,7 +129,7 @@ def scatter_r2_vals(r2_vals, T_pi_idx, dim_vals, offset_vals, T_pi_vals,
         ax.set_title(title, fontsize=style.title_fontsize)
 
 
-def plot_pi_vs_T(r2_vals, T_pi_vals, dim_vals, offset_vals, offset_idx=0, min_max_val=None,
+def plot_r2_vs_T(r2_vals, T_pi_vals, dim_vals, offset_vals, offset_idx=0, min_max_val=None,
                  legend=True, timestep=1, timestep_units="", ax=None,
                  xlabel=True, ylabel=True, bbox_to_anchor=None, loc=None):
 
@@ -126,9 +145,9 @@ def plot_pi_vs_T(r2_vals, T_pi_vals, dim_vals, offset_vals, offset_idx=0, min_ma
     if min_max_val is None:
         min_max_val = np.max(np.abs(improvement_mean))
     ax.set_ylim([-min_max_val / 2., min_max_val])
-    ax.set_yticks([-min_max_val / 2., min_max_val])
-    ax.set_yticklabels([-min_max_val / 2., min_max_val], fontsize=style.ticklabel_fontsize)
-    ax.text(.4, .1, 'lag = {} bins'.format(offset_vals[offset_idx]),
+    ax.set_yticks([-min_max_val / 2., 0, min_max_val])
+    ax.set_yticklabels([-min_max_val / 2., 0., min_max_val], fontsize=style.ticklabel_fontsize)
+    ax.text(.1, .1, 'lag = {} bins'.format(offset_vals[offset_idx]),
             transform=ax.transAxes, fontsize=style.ticklabel_fontsize)
 
     # set ticks
@@ -138,7 +157,7 @@ def plot_pi_vs_T(r2_vals, T_pi_vals, dim_vals, offset_vals, offset_idx=0, min_ma
     ax.set_xticklabels(x_ticks.astype(np.int), fontsize=style.ticklabel_fontsize)
 
     # plot zero line
-    ax.axhline(0, c="black", linestyle="--", zorder=0)
+    ax.axhline(0, c="black", linestyle="-", zorder=0, lw=1)
 
     # plot data
     for dim_idx in range(len(dim_vals)):
@@ -162,3 +181,68 @@ def plot_pi_vs_T(r2_vals, T_pi_vals, dim_vals, offset_vals, offset_idx=0, min_ma
     if ylabel:
         ax.set_ylabel("$\Delta R^2$ improvement\nover SFA",
                       fontsize=style.axis_label_fontsize, labelpad=-8)
+
+def plot_absolute_r2_vs_T(r2_vals, T_pi_vals, dim_vals, offset_vals, offset_idx=0, min_max_val=None,
+                          legend=True, timestep=1, timestep_units="", ax=None,
+                          xlabel=True, ylabel=True, bbox_to_anchor=None, loc=None,
+                          dca=True):
+
+    if ax is None:
+        _, ax = plt.subplots(1, 1, figsize=(5, 5))
+
+    # calculate mean improvement across CV folds
+    dca_mean = np.mean(r2_vals[:, :, offset_idx, 2:], axis=0)
+    sfa_mean = np.mean(r2_vals[:, :, offset_idx, 1][..., np.newaxis], axis=0)
+    sfa_mean = np.tile(sfa_mean, (1, dca_mean.shape[-1]))
+    if dca:
+        name = 'DCA'
+        mean = dca_mean
+        print(mean.shape)
+    else:
+        name = 'SFA'
+        mean = sfa_mean
+        print(mean.shape)
+
+    # set plot bounds
+    if min_max_val is None:
+        min_max_val = np.max(np.abs(mean))
+    ax.set_ylim([-min_max_val / 2., min_max_val])
+    if min_max_val > 1.:
+        ax.set_yticks([-.5, 0, 1])
+        ax.set_yticklabels([-.5, '0', 1], fontsize=style.ticklabel_fontsize)
+    else:
+        ax.set_yticks([-min_max_val / 2., 0, min_max_val])
+        ax.set_yticklabels([-min_max_val / 2., '0', min_max_val], fontsize=style.ticklabel_fontsize)
+    ax.text(.1, .1, 'lag = {} bins'.format(offset_vals[offset_idx]),
+            transform=ax.transAxes, fontsize=style.ticklabel_fontsize)
+
+    # set ticks
+    x_vals = T_pi_vals
+    x_ticks = x_vals[1::2]
+    ax.set_xticks(x_ticks)
+    ax.set_xticklabels(x_ticks.astype(np.int), fontsize=style.ticklabel_fontsize)
+
+    # plot zero line
+    ax.axhline(0, c="black", linestyle="-", zorder=0, lw=1)
+
+    # plot data
+    for dim_idx in range(len(dim_vals)):
+        dim_str = "dim: " + str(dim_vals[dim_idx])
+        ax.plot(x_vals, mean[dim_idx],
+                color=dim_colors[dim_idx], linewidth=1.)
+        ax.scatter(x_vals, mean[dim_idx],
+                   color=dim_colors[dim_idx],
+                   marker=".", s=16,
+                   label=dim_str)
+
+    # make legend
+    if legend:
+        ax.legend(frameon=True, fontsize=style.ticklabel_fontsize, fancybox=True,
+                  bbox_to_anchor=bbox_to_anchor, loc=loc)
+
+    # add labels/titles
+    if xlabel:
+        ax.set_xlabel(r"T ({} {} bins)".format(timestep, timestep_units),
+                      fontsize=style.axis_label_fontsize, labelpad=0)
+    if ylabel:
+        ax.set_ylabel("{} $R^2$".format(name), fontsize=style.axis_label_fontsize, labelpad=-8)

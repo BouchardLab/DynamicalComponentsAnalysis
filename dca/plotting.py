@@ -34,7 +34,7 @@ def decoding_fix_axes(fig_width=10, fig_height=5, wpad_left=0, wpad_right=0.,
 def scatter_r2_vals(r2_vals, T_pi_idx, dim_vals, offset_vals, T_pi_vals,
                     min_val=None, max_val=None,
                     legend_both_cols=True, timestep=1, timestep_units="",
-                    ax=None, xlabel=True, ylabel=True, title=None, legend=True,
+                    ax=None, xlabel=True, ylabel=True, title=None, legend=True, legendtext=True,
                     bbox_to_anchor=None, loc=None, pca_label="PCA"):
     if ax is None:
         _, ax = plt.subplots(1, 1, figsize=(5, 5))
@@ -94,10 +94,11 @@ def scatter_r2_vals(r2_vals, T_pi_idx, dim_vals, offset_vals, T_pi_vals,
                   handletextpad=0, fontsize=style.ticklabel_fontsize - 1,
                   fancybox=True, markerscale=.8, frameon=True,
                   bbox_to_anchor=bbox_to_anchor, loc=loc, handlelength=1.25)
-        ax.text(.6, .5, 'dim',
-                transform=ax.transAxes, fontsize=style.ticklabel_fontsize)
-        ax.text(.85, .5, 'lag',
-                transform=ax.transAxes, fontsize=style.ticklabel_fontsize)
+        if legendtext:
+            ax.text(.6, .5, 'dim',
+                    transform=ax.transAxes, fontsize=style.ticklabel_fontsize)
+            ax.text(.85, .5, 'lag',
+                    transform=ax.transAxes, fontsize=style.ticklabel_fontsize)
 
     # add labels/titles
     if xlabel:

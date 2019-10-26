@@ -108,7 +108,8 @@ figs/
 __pycache__/
 .DS_Store
 *.hdf5
-*.pdf
+notebooks/figures/
+notebooks/old/
 *.mat
 *.npz
 data/accel/*

@@ -31,10 +31,10 @@ def decoding_fix_axes(fig_width=10, fig_height=5, wpad_left=0, wpad_right=0.,
     return fig, axes
 
 
-def decoding_fix_axes2(fig_width=10, fig_height=5, wpad_left=0, wpad_right=0.,
-                      wpad_mid=.1, hpad_bot=0, hpad_mid=.1):
+def decoding_fix_axes2(fig_width=10, fig_height=5, wpad_left=0, wpad_right=0., wpad_mid=.1,
+                       hpad_bot=0, hpad_mid=.1):
     fig = plt.figure(figsize=(fig_width, fig_height))
-    sq_width = (1 - wpad_left - wpad_right -  wpad_mid) / 2
+    sq_width = (1 - wpad_left - wpad_right - wpad_mid) / 2
     sq_height = sq_width * fig_width / fig_height
 
     # top row
@@ -119,18 +119,12 @@ def scatter_r2_vals(r2_vals, T_pi_idx, dim_vals, offset_vals, T_pi_vals,
             ax.text(.85, .5, 'lag',
                     transform=ax.transAxes, fontsize=style.ticklabel_fontsize)
 
-        #ax.text(bbox_to_anchor[0]+.125, bbox_to_anchor[1]-.025, 'dim', ha='left', va='bottom',
-        #        transform=ax.transAxes, fontsize=style.ticklabel_fontsize)
-        #ax.text(bbox_to_anchor[0] + .35, bbox_to_anchor[1]-.025, 'lag', ha='left', va='bottom',
-        #        transform=ax.transAxes, fontsize=style.ticklabel_fontsize)
-        
     # add labels/titles
     if xlabel:
         ax.set_xlabel(pca_label + " $R^2$", fontsize=style.axis_label_fontsize,
                       labelpad=-8)
     if ylabel:
-        ax.set_ylabel("DCA $R^2$", fontsize=style.axis_label_fontsize,
-                      labelpad=-8)
+        ax.set_ylabel("DCA $R^2$", fontsize=style.axis_label_fontsize, labelpad=-8)
     if title is not None:
         ax.set_title(title, fontsize=style.title_fontsize)
 
@@ -185,8 +179,9 @@ def plot_r2_vs_T(r2_vals, T_pi_vals, dim_vals, offset_vals, offset_idx=0, min_ma
         ax.set_xlabel(r"T ({} {} bins)".format(timestep, timestep_units),
                       fontsize=style.axis_label_fontsize, labelpad=0)
     if ylabel:
-        ax.set_ylabel("$\Delta R^2$ improvement\nover SFA",
+        ax.set_ylabel('$\Delta R^2$ improvement\nover SFA',
                       fontsize=style.axis_label_fontsize, labelpad=-8)
+
 
 def plot_absolute_r2_vs_T(r2_vals, T_pi_vals, dim_vals, offset_vals, offset_idx=0, min_max_val=None,
                           legend=True, timestep=1, timestep_units="", ax=None,

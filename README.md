@@ -5,5 +5,3 @@ Implementation of the methods and analyses in [Unsupervised Discovery of Tempora
 To install, you can clone the repository, `cd` into the DynamicalComponentsAnalysis folder, and run
 
 `pip install -e .`
-
-You will also need to install PyTorch following the instructions on their page.

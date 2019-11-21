@@ -11,27 +11,27 @@ from sklearn.utils.extmath import randomized_svd
 def rectify_spectrum(cov, epsilon=1e-6, verbose=False):
     min_eig = np.min(sp.linalg.eigvalsh(cov))
     if min_eig < 0:
-        cov += (-min_eig + epsilon)*np.eye(cov.shape[0])
+        cov += (-min_eig + epsilon) * np.eye(cov.shape[0])
         if verbose:
             print("Warning: non-PSD matrix (had to increase eigenvalues)")
 
 
 def toeplitzify(C, T, N, symmetrize=True):
-    C_toep = np.zeros((T*N, T*N))
+    C_toep = np.zeros((T * N, T * N))
     for delta_t in range(T):
-        to_avg_lower = np.zeros((T-delta_t, N, N))
-        to_avg_upper = np.zeros((T-delta_t, N, N))
+        to_avg_lower = np.zeros((T - delta_t, N, N))
+        to_avg_upper = np.zeros((T - delta_t, N, N))
         for i in range(T - delta_t):
-            to_avg_lower[i] = C[(delta_t + i)*N : (delta_t + i + 1)*N, i*N : (i + 1)*N]
-            to_avg_upper[i] = C[i*N : (i + 1)*N, (delta_t + i)*N : (delta_t + i + 1)*N]
+            to_avg_lower[i] = C[(delta_t + i) * N:(delta_t + i + 1) * N, i * N:(i + 1) * N]
+            to_avg_upper[i] = C[i * N:(i + 1) * N, (delta_t + i) * N:(delta_t + i + 1) * N]
         avg_lower = np.mean(to_avg_lower, axis=0)
         avg_upper = np.mean(to_avg_upper, axis=0)
         if symmetrize:
-            avg_lower = 0.5*(avg_lower + avg_upper.T)
-            avg_upper = 0.5*(avg_lower.T + avg_upper)
-        for i in range(T-delta_t):
-            C_toep[(delta_t + i)*N : (delta_t + i + 1)*N, i*N : (i + 1)*N] = avg_lower
-            C_toep[i*N : (i + 1)*N, (delta_t + i)*N : (delta_t + i + 1)*N] = avg_upper
+            avg_lower = 0.5 * (avg_lower + avg_upper.T)
+            avg_upper = 0.5 * (avg_lower.T + avg_upper)
+        for i in range(T - delta_t):
+            C_toep[(delta_t + i) * N:(delta_t + i + 1) * N, i * N:(i + 1) * N] = avg_lower
+            C_toep[i * N:(i + 1) * N, (delta_t + i) * N:(delta_t + i + 1) * N] = avg_upper
     return C_toep
 
 
@@ -76,12 +76,11 @@ def calc_cross_cov_mats_from_data(X, T, regularization=None, reg_ops=None):
         cov_est = toeplitzify(cov_est, T, N)
     elif regularization == 'kron':
         num_folds = reg_ops.get('num_folds', 5)
-        r_vals = np.arange(1, min(2*T, N**2 + 1))
-        sigma_vals = np.concatenate([np.linspace(1, 4*T + 1, 10), [100. * T]])
+        r_vals = np.arange(1, min(2 * T, N**2 + 1))
+        sigma_vals = np.concatenate([np.linspace(1, 4 * T + 1, 10), [100. * T]])
         alpha_vals = np.concatenate([[0.], np.logspace(-2, -1, 10)])
-        ll_vals, opt_idx = cv_toeplitz(X_with_lags, T, N,
-                                          r_vals, sigma_vals, alpha_vals,
-                                          num_folds=num_folds)
+        ll_vals, opt_idx = cv_toeplitz(X_with_lags, T, N, r_vals, sigma_vals, alpha_vals,
+                                       num_folds=num_folds)
         ri, si, ai = opt_idx
         cov = np.cov(X_with_lags, rowvar=False)
         cov_est = toeplitz_reg_taper_shrink(cov, T, N, r_vals[ri], sigma_vals[si], alpha_vals[ai])
@@ -121,23 +120,23 @@ def calc_cross_cov_mats_from_cov(cov, T, N):
 
     for delta_t in range(T):
         if use_torch:
-            to_avg_lower = torch.zeros((T-delta_t, N, N))
-            to_avg_upper = torch.zeros((T-delta_t, N, N))
+            to_avg_lower = torch.zeros((T - delta_t, N, N))
+            to_avg_upper = torch.zeros((T - delta_t, N, N))
         else:
-            to_avg_lower = np.zeros((T-delta_t, N, N))
-            to_avg_upper = np.zeros((T-delta_t, N, N))
+            to_avg_lower = np.zeros((T - delta_t, N, N))
+            to_avg_upper = np.zeros((T - delta_t, N, N))
 
-        for i in range(T-delta_t):
-            to_avg_lower[i, :, :] = cov[(delta_t + i)*N:(delta_t + i + 1)*N, i*N:(i + 1)*N]
-            to_avg_upper[i, :, :] = cov[i*N:(i + 1)*N, (delta_t + i)*N:(delta_t + i + 1)*N]
+        for i in range(T - delta_t):
+            to_avg_lower[i, :, :] = cov[(delta_t + i) * N:(delta_t + i + 1) * N, i * N:(i + 1) * N]
+            to_avg_upper[i, :, :] = cov[i * N:(i + 1) * N, (delta_t + i) * N:(delta_t + i + 1) * N]
 
         avg_lower = to_avg_lower.mean(axis=0)
         avg_upper = to_avg_upper.mean(axis=0)
 
         if use_torch:
-            cross_cov_mats[delta_t, :, :] = 0.5*(avg_lower + avg_upper.t())
+            cross_cov_mats[delta_t, :, :] = 0.5 * (avg_lower + avg_upper.t())
         else:
-            cross_cov_mats[delta_t, :, :] = 0.5*(avg_lower + avg_upper.T)
+            cross_cov_mats[delta_t, :, :] = 0.5 * (avg_lower + avg_upper.T)
 
     return cross_cov_mats
 
@@ -165,19 +164,21 @@ def calc_cov_from_cross_cov_mats(cross_cov_mats):
     for i in range(T):
         for j in range(T):
             if i > j:
-                cross_cov_mats_repeated.append(cross_cov_mats[abs(i-j)])
+                cross_cov_mats_repeated.append(cross_cov_mats[abs(i - j)])
             else:
                 if use_torch:
-                    cross_cov_mats_repeated.append(cross_cov_mats[abs(i-j)].t())
+                    cross_cov_mats_repeated.append(cross_cov_mats[abs(i - j)].t())
                 else:
-                    cross_cov_mats_repeated.append(cross_cov_mats[abs(i-j)].T)
+                    cross_cov_mats_repeated.append(cross_cov_mats[abs(i - j)].T)
 
     if use_torch:
         cov_tensor = torch.reshape(torch.stack(cross_cov_mats_repeated), (T, T, N, N))
-        cov = torch.cat([torch.cat([cov_ii_jj for cov_ii_jj in cov_ii], dim=1) for cov_ii in cov_tensor])
+        cov = torch.cat([torch.cat([cov_ii_jj for cov_ii_jj in cov_ii], dim=1)
+                         for cov_ii in cov_tensor])
     else:
         cov_tensor = np.reshape(np.stack(cross_cov_mats_repeated), (T, T, N, N))
-        cov = np.concatenate([np.concatenate([cov_ii_jj for cov_ii_jj in cov_ii], axis=1) for cov_ii in cov_tensor])
+        cov = np.concatenate([np.concatenate([cov_ii_jj for cov_ii_jj in cov_ii], axis=1)
+                              for cov_ii in cov_tensor])
 
     return cov
 
@@ -264,7 +265,7 @@ def project_cross_cov_mats(cross_cov_mats, proj):
                                                         proj.unsqueeze(0)))
     else:
         cross_cov_mats_proj = []
-        for i in range(2*T):
+        for i in range(2 * T):
             cross_cov = cross_cov_mats[i]
             cross_cov_proj = np.dot(proj.T, np.dot(cross_cov, proj))
             cross_cov_mats_proj.append(cross_cov_proj)
@@ -303,14 +304,15 @@ def calc_pi_from_cross_cov_mats(cross_cov_mats, proj=None):
 
 
 """
-========================================================================================================================
-========================================================================================================================
-===========================================                                  ===========================================
-===========================================     KronPCA-related methods      ===========================================
-===========================================                                  ===========================================
-========================================================================================================================
-========================================================================================================================
+====================================================================================================
+====================================================================================================
+===================================                                  ===============================
+===================================     KronPCA-related methods      ===============================
+===================================                                  ===============================
+====================================================================================================
+====================================================================================================
 """
+
 
 class memoized(object):
     """Decorator for memoization.
@@ -337,24 +339,24 @@ class memoized(object):
             return value
 
     def __repr__(self):
-        #Return the function's docstring.
+        # Return the function's docstring.
         return self.func.__doc__
 
     def __get__(self, obj, objtype):
-        #Support instance methods.
+        # Support instance methods.
         return functools.partial(self.__call__, obj)
 
 
 @memoized
 def pv_permutation(T, N):
-    I = np.arange(T**2 * N**2, dtype=np.int).reshape((T*N, T*N))
-    I_perm = np.zeros((T**2, N**2), dtype=np.int)
+    A = np.arange((T * N)**2, dtype=np.int).reshape((T * N, T * N))
+    A_perm = np.zeros((T**2, N**2), dtype=np.int)
     for i in range(T):
         for j in range(T):
-            row_idx = i*T + j
-            I_block = I[i*N:(i+1)*N, j*N:(j+1)*N]
-            I_perm[row_idx, :] = I_block.T.reshape((N**2,))  # equivalent to I_block.vectorize
-    perm = I_perm.ravel()
+            row_idx = i * T + j
+            A_block = A[i * N:(i + 1) * N, j * N:(j + 1) * N]
+            A_perm[row_idx, :] = A_block.T.reshape((N**2,))  # equivalent to I_block.vectorize
+    perm = A_perm.ravel()
     perm_inv = perm.argsort()
     return perm, perm_inv
 
@@ -367,16 +369,16 @@ def pv_rearrange(C, T, N):
 
 def pv_rearrange_inv(C, T, N):
     _, perm_inv = pv_permutation(T, N)
-    C_prime = C.ravel()[perm_inv].reshape((T*N, T*N))
+    C_prime = C.ravel()[perm_inv].reshape((T * N, T * N))
     return C_prime
 
 
 def build_P(T):
-    P = np.zeros((2*T - 1, T**2))
+    P = np.zeros((2 * T - 1, T**2))
     idx = np.arange(T**2).reshape((T, T)).T + 1
-    for offset in range(-T+1, T):
+    for offset in range(-T + 1, T):
         diag_idx = np.diagonal(idx, offset=offset)
-        P[offset+T-1, diag_idx-1] = 1/np.sqrt(T - np.abs(offset))
+        P[offset + T - 1, diag_idx - 1] = 1. / np.sqrt(T - np.abs(offset))
     return P
 
 
@@ -384,7 +386,7 @@ def toeplitz_reg(cov, T, N, r):
     R_C = pv_rearrange(cov, T, N)
     P = build_P(T)
     to_svd = P.dot(R_C)
-    U, s, Vt = randomized_svd(to_svd, n_components=r+1, n_iter=40, random_state=42)
+    U, s, Vt = randomized_svd(to_svd, n_components=r + 1, n_iter=40, random_state=42)
     trunc_svd = U[:, :-1].dot(np.diag(s[:-1] - s[-1])).dot(Vt[:-1, :])
     cov_reg = pv_rearrange_inv(P.T.dot(trunc_svd), T, N)
     return cov_reg
@@ -392,7 +394,7 @@ def toeplitz_reg(cov, T, N, r):
 
 def non_toeplitz_reg(cov, T, N, r):
     R_C = pv_rearrange(cov, T, N)
-    U, s, Vt = randomized_svd(R_C, n_components=r+1, n_iter=40, random_state=42)
+    U, s, Vt = randomized_svd(R_C, n_components=r + 1, n_iter=40, random_state=42)
     trunc_svd = U[:, :-1].dot(np.diag(s[:-1] - s[-1])).dot(Vt[:-1, :])
     cov_reg = pv_rearrange_inv(trunc_svd, T, N)
     return cov_reg
@@ -401,7 +403,7 @@ def non_toeplitz_reg(cov, T, N, r):
 def toeplitz_reg_taper_shrink(cov, T, N, r, sigma, alpha):
     cov_reg = toeplitz_reg(cov, T, N, r)
     cov_reg_taper = taper_cov(cov_reg, T, N, sigma)
-    cov_reg_taper_shrink = (1. - alpha)*cov_reg_taper + alpha*np.eye(T*N)
+    cov_reg_taper_shrink = (1. - alpha) * cov_reg_taper + alpha * np.eye(T * N)
     return cov_reg_taper_shrink
 
 
@@ -409,7 +411,8 @@ def gaussian_log_likelihood(cov, sample_cov, num_samples):
     to_trace = np.linalg.solve(cov, sample_cov)
     log_det_cov = np.linalg.slogdet(cov)[1]
     d = cov.shape[1]
-    log_likelihood = -0.5*num_samples*(d*np.log(2*np.pi) + log_det_cov + np.trace(to_trace))
+    log_likelihood = -0.5 * num_samples * (d * np.log(2. * np.pi) +
+                                           log_det_cov + np.trace(to_trace))
     return log_likelihood
 
 
@@ -423,16 +426,17 @@ def taper_cov(cov, T, N, sigma):
 
 
 def cv_toeplitz(X_with_lags, T, N, r_vals, sigma_vals, alpha_vals, num_folds=10, verbose=False):
-    fold_size = int(np.floor(len(X_with_lags)/num_folds))
+    fold_size = int(np.floor(len(X_with_lags) / num_folds))
     P = build_P(T)
     ll_vals = np.zeros((num_folds, len(r_vals), len(sigma_vals), len(alpha_vals)))
 
     for cv_iter in range(num_folds):
         if verbose:
-            print("fold =", cv_iter+1)
+            print("fold =", cv_iter + 1)
 
-        X_train = np.concatenate((X_with_lags[:cv_iter*fold_size], X_with_lags[(cv_iter+1)*fold_size:]), axis=0)
-        X_test = X_with_lags[cv_iter*fold_size:(cv_iter+1)*fold_size]
+        X_train = np.concatenate((X_with_lags[:cv_iter * fold_size],
+                                  X_with_lags[(cv_iter + 1) * fold_size:]), axis=0)
+        X_test = X_with_lags[cv_iter * fold_size:(cv_iter + 1) * fold_size]
         num_samples = len(X_test)
         cov_train, cov_test = np.cov(X_train.T), np.cov(X_test.T)
         cov_train, cov_test = toeplitzify(cov_train, T, N), toeplitzify(cov_test, T, N)
@@ -454,11 +458,11 @@ def cv_toeplitz(X_with_lags, T, N, r_vals, sigma_vals, alpha_vals, num_folds=10,
             cov_kron = pv_rearrange_inv(P.T.dot(trunc_svd), T, N)
             for sigma_idx in range(len(sigma_vals)):
                 sigma = sigma_vals[sigma_idx]
-                cov_kron_tapered = taper_cov(cov_kron, T, N, sigma)
+                cov_kron_taper = taper_cov(cov_kron, T, N, sigma)
                 for alpha_idx in range(len(alpha_vals)):
                     alpha = alpha_vals[alpha_idx]
-                    cov_kron_tapered_shrunk = (1. - alpha)*cov_kron_tapered + alpha*np.eye(T*N)
-                    ll = gaussian_log_likelihood(cov_kron_tapered_shrunk, cov_test, num_samples)
+                    cov_kron_taper_shrunk = ((1. - alpha) * cov_kron_taper + alpha * np.eye(T * N))
+                    ll = gaussian_log_likelihood(cov_kron_taper_shrunk, cov_test, num_samples)
                     ll_vals[cv_iter, r_idx, sigma_idx, alpha_idx] = ll
 
     opt_idx = np.unravel_index(ll_vals.mean(axis=0).argmax(), ll_vals.shape[1:])

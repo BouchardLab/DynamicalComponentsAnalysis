@@ -26,6 +26,7 @@ def make_norm_power(X, T_ent):
     Yp = torch.mean(Yf[:, :, :, 0]**2 + Yf[:, :, :, 1]**2, dim=1)
     return Yp / torch.sum(Yp, dim=1, keepdim=True)
 
+
 def ent_loss_fn(X, proj, T_ent):
     """Power spectrum entropy loss function."""
     if not isinstance(X, torch.Tensor):
@@ -39,6 +40,7 @@ def ent_loss_fn(X, proj, T_ent):
     YP = make_norm_power(Xp_tensor, T_ent)
     ent = -(YP * torch.log(YP)).sum(dim=1)
     return ent.sum()
+
 
 class ForcastableComponentsAnalysis(object):
     """Forcastable Components Analysis.
@@ -65,7 +67,7 @@ class ForcastableComponentsAnalysis(object):
         self.n_init = n_init
         self.tol = tol
         self.ortho_lambda = ortho_lambda
-        self.verbose=verbose
+        self.verbose = verbose
         self.device = device
         self.dtype = dtype
         self.cross_covs = None
@@ -108,7 +110,7 @@ class ForcastableComponentsAnalysis(object):
 
         Xt = X
         if not isinstance(Xt, torch.Tensor):
-        	Xt = torch.tensor(Xt, device=self.device, dtype=self.dtype)
+            Xt = torch.tensor(Xt, device=self.device, dtype=self.dtype)
 
         if self.verbose:
             def callback(v_flat):
@@ -122,10 +124,11 @@ class ForcastableComponentsAnalysis(object):
                 ent = ent.detach().cpu().numpy()
                 reg_val = reg_val.detach().cpu().numpy()
                 print("Ent: {} bits, reg: {}".format(str(np.round(ent, 4)),
-                                                    str(np.round(reg_val, 4))))
+                                                     str(np.round(reg_val, 4))))
             callback(V_init)
         else:
             callback = None
+
         def f_df(v_flat):
             v_flat_torch = torch.tensor(v_flat,
                                         requires_grad=True,
@@ -137,9 +140,11 @@ class ForcastableComponentsAnalysis(object):
             loss = ent + reg_val
             loss.backward()
             grad = v_flat_torch.grad
-            return loss.detach().cpu().numpy().astype(float), grad.detach().cpu().numpy().astype(float)
+            return (loss.detach().cpu().numpy().astype(float),
+                    grad.detach().cpu().numpy().astype(float))
         opt = minimize(f_df, V_init.ravel(), method='L-BFGS-B', jac=True,
-                       options={'disp': self.verbose, 'ftol': 1e-6, 'gtol': 1e-5, 'maxfun': 15000, 'maxiter': 15000, 'maxls': 20},
+                       options={'disp': self.verbose, 'ftol': 1e-6, 'gtol': 1e-5,
+                                'maxfun': 15000, 'maxiter': 15000, 'maxls': 20},
                        callback=callback)
         v = opt.x.reshape(N, d)
 
@@ -175,6 +180,7 @@ def calc_K(tau, delta_t, var_n):
         rval += var_n
     return rval
 
+
 def calc_big_K(T, n_factors, tau, var_n, out=None):
     """Calculates the GP kernel autocorrelation for all latent factors.
     """
@@ -185,22 +191,24 @@ def calc_big_K(T, n_factors, tau, var_n, out=None):
     for delta_t in range(T):
         diag = calc_K(tau, delta_t, var_n)
         diag = np.tile(diag, T - delta_t)
-        idxs_0 = np.arange(0, (T - delta_t)*n_factors)
-        idxs_1 = np.arange(delta_t*n_factors, T*n_factors)
+        idxs_0 = np.arange(0, (T - delta_t) * n_factors)
+        idxs_1 = np.arange(delta_t * n_factors, T * n_factors)
         K[idxs_0, idxs_1] = diag
         K[idxs_1, idxs_0] = diag
     return K
+
 
 def make_block_diag(M, num_reps, out=None):
     """Create a block diagonal matrix from M repeated num_reps times.
     """
     if out is None:
-        big_M = np.zeros((M.shape[0]*num_reps, M.shape[1]*num_reps))
+        big_M = np.zeros((M.shape[0] * num_reps, M.shape[1] * num_reps))
     else:
         big_M = out
     for i in range(num_reps):
-        big_M[i*M.shape[0]:(i+1)*M.shape[0], i*M.shape[1]:(i+1)*M.shape[1]] = M
+        big_M[i * M.shape[0]:(i + 1) * M.shape[0], i * M.shape[1]:(i + 1) * M.shape[1]] = M
     return big_M
+
 
 def block_dot_A(A, B, n_blocks, out=None):
     """Computes np.dot(make_block_diag(A, n_blocks), B).
@@ -210,9 +218,10 @@ def block_dot_A(A, B, n_blocks, out=None):
     if out is None:
         out = np.empty((block_r * n_blocks, B.shape[1]), dtype=A.dtype)
     for ii in range(n_blocks):
-        Bi = B[ii*block_c:(ii+1)*block_c]
-        out[ii*block_r:(ii+1)*block_r] = A.dot(Bi)
+        Bi = B[ii * block_c:(ii + 1) * block_c]
+        out[ii * block_r:(ii + 1) * block_r] = A.dot(Bi)
     return out
+
 
 def block_dot_B(A, B, n_blocks, out=None):
     """Computes np.dot(A, make_block_diag(B, n_blocks)).
@@ -222,21 +231,22 @@ def block_dot_B(A, B, n_blocks, out=None):
     if out is None:
         out = np.empty((A.shape[0], block_c * n_blocks), dtype=A.dtype)
     for ii in range(n_blocks):
-        Ai = A[:, ii*block_r:(ii+1)*block_r]
-        out[:, ii*block_c:(ii+1)*block_c] = Ai.dot(B)
+        Ai = A[:, ii * block_r:(ii + 1) * block_r]
+        out[:, ii * block_c:(ii + 1) * block_c] = Ai.dot(B)
     return out
+
 
 def block_dot_AB(A, B, n_blocks, out=None):
     """Computes np.dot(A, B) when A and B is block diagonal.
     """
     block_r = A.shape[0]
-    block_c = A.shape[1]
     block_c2 = B.shape[1]
     if out is None:
         out = np.zeros((block_r * n_blocks, block_c2 * n_blocks), dtype=A.dtype)
     for ii in range(n_blocks):
-        out[ii*block_r:(ii+1)*block_r, ii*block_c2:(ii+1)*block_c2] = A.dot(B)
+        out[ii * block_r:(ii + 1) * block_r, ii * block_c2:(ii + 1) * block_c2] = A.dot(B)
     return out
+
 
 def matrix_inversion_identity(R_inv, K, C, T):
     """Computes (R + CKC^T)^{-1} using the matrix inversion identity as
@@ -250,7 +260,8 @@ def matrix_inversion_identity(R_inv, K, C, T):
     R_invC = np.dot(R_inv, C)
     sub = K_inv + block_dot_AB(C.T, R_invC, T)
     term1 = block_dot_A(R_invC, np.linalg.solve(sub, make_block_diag(R_invC.T, T)), T)
-    return make_block_diag(R_inv, T) -  term1
+    return make_block_diag(R_inv, T) - term1
+
 
 def log_likelihood(mu, sigma, y, T):
     """Log likelihood for a multivariate normal distribution.
@@ -264,7 +275,7 @@ def log_likelihood(mu, sigma, y, T):
         y_minus_mean = yi - mu[Ti]
         term3 = np.dot(y_minus_mean.T.ravel(),
                        np.linalg.solve(sigma[Ti], y_minus_mean.T).ravel())
-        ll += (-0.5*d*np.log(2*np.pi) - 0.5*log_det_cov - 0.5*term3)
+        ll += (-0.5 * d * np.log(2 * np.pi) - 0.5 * log_det_cov - 0.5 * term3)
     return ll
 
 
@@ -316,7 +327,7 @@ class GaussianProcessFactorAnalysis(object):
 
         self.R_ = np.diag(model.noise_variance_)
         self.C_ = model.components_.T
-        self.d_ =  np.zeros(n)
+        self.d_ = np.zeros(n)
         self.tau_ = self.tau_init + self.rng.rand(self.n_factors)
         # Allocated and reuse these
         C = self.C_
@@ -350,7 +361,6 @@ class GaussianProcessFactorAnalysis(object):
         ----------
         y : ndarray (time, features)
         """
-        n = y[0].shape[1]
         T = [yi.shape[0] for yi in y]
         big_d = {Ti: np.tile(self.d_, Ti) for Ti in set(T)}
         big_y = [yi.ravel() for yi in y]
@@ -363,7 +373,7 @@ class GaussianProcessFactorAnalysis(object):
                  for Ti in set(T)}
 
         if self.verbose == 2:
-            #Compute log likelihood under current params
+            # Compute log likelihood under current params
             ll = log_likelihood(big_d, y_cov, big_y, T)
             print("Pre update log likelihood:", ll)
 
@@ -379,38 +389,38 @@ class GaussianProcessFactorAnalysis(object):
         sum_x = sum([xi.sum(axis=0) for xi in x])
         xxp[:-1, -1] = sum_x
         xxp[-1, :-1] = sum_x
-        yx = sum([yi.T.dot(np.concatenate((xi, np.ones((Ti, 1))), axis=1)) for yi, xi, Ti in zip(y, x, T)])
+        yx = sum([yi.T.dot(np.concatenate((xi, np.ones((Ti, 1))), axis=1))
+                  for yi, xi, Ti in zip(y, x, T)])
         Cd = np.linalg.solve(xxp, yx.T).T
         self.C_ = Cd[:, :-1]
         if self.verbose == 2:
-            #Compute log likelihood under current params
+            # Compute log likelihood under current params
             ll = self._calc_loglikelihood(y)
             print("C_ update log likelihood:", ll)
         self.d_ = Cd[:, -1]
         if self.verbose == 2:
-            #Compute log likelihood under current params
+            # Compute log likelihood under current params
             ll = self._calc_loglikelihood(y)
             print("d_ update log likelihood:", ll)
         dy = [yi - self.d_[np.newaxis] for yi in y]
         self.R_ = sum([np.diag(np.diag(dyi.T.dot(dyi) - dyi.T.dot(xi).dot(self.C_.T)))
                        for dyi, xi in zip(dy, x)]) / sum(T)
         if self.verbose == 2:
-            #Compute log likelihood under current params
+            # Compute log likelihood under current params
             ll = self._calc_loglikelihood(y)
             print("Exact update log likelihood:", ll)
         self.tau_ = self._optimize_tau(self.tau_, T, big_xxp, big_K)
         ll = self._calc_loglikelihood(y)
         if self.verbose == 2:
-            #Compute log likelihood under current params
+            # Compute log likelihood under current params
             print("tau update log likelihood:", ll)
         if self.verbose:
-            #Compute log likelihood under current params
+            # Compute log likelihood under current params
             print("EM update log likelihood:", ll)
             print()
         return ll
 
     def _calc_loglikelihood(self, y):
-        n = y[0].shape[1]
         T = [yi.shape[0] for yi in y]
         big_d = {Ti: np.tile(self.d_, Ti) for Ti in set(T)}
         big_y = [yi.ravel() for yi in y]
@@ -418,8 +428,6 @@ class GaussianProcessFactorAnalysis(object):
         R = self.R_
 
         mean, big_K, big_dy, KCt, KCt_CKCtR_inv = self._E_mean(y)
-        cov = {Ti: big_K[Ti] - KCt_CKCtR_inv[Ti].dot(KCt[Ti].T)
-               for Ti in T}
         y_cov = {Ti: block_dot_A(C, KCt[Ti], Ti) + make_block_diag(R, Ti)
                  for Ti in T}
         return log_likelihood(big_d, y_cov, big_y, T)
@@ -428,7 +436,6 @@ class GaussianProcessFactorAnalysis(object):
         if isinstance(y, np.ndarray) and y.ndim == 2:
             y = [y]
         return self._calc_loglikelihood(y)
-
 
     def _optimize_tau(self, tau_init, T, Sigma_mu_mu_x, big_K=None):
         """Optimization for tau.
@@ -451,10 +458,13 @@ class GaussianProcessFactorAnalysis(object):
             big_K = {Ti: None for Ti in set(T)}
         log_tau_init = np.log(tau_init)
         var_f = 1. - self.var_n
+
         def f_df(big_K, log_tau):
-            big_K = {Ti: calc_big_K(Ti, self.n_factors, np.exp(log_tau), self.var_n, big_K[Ti]) for Ti in set(T)}
+            big_K = {Ti: calc_big_K(Ti, self.n_factors, np.exp(log_tau), self.var_n, big_K[Ti])
+                     for Ti in set(T)}
             K_inv = {Ti: np.linalg.inv(big_K[Ti]) for Ti in set(T)}
-            f = sum([-.5 * (np.sum(K_inv[Ti] * Sigma_mu_mu_xi) + np.linalg.slogdet(2. * np.pi * big_K[Ti])[1])
+            f = sum([-.5 * (np.sum(K_inv[Ti] * Sigma_mu_mu_xi) +
+                            np.linalg.slogdet(2. * np.pi * big_K[Ti])[1])
                      for Ti, Sigma_mu_mu_xi in zip(T, Sigma_mu_mu_x)])
 
             df = np.zeros_like(log_tau)
@@ -469,9 +479,10 @@ class GaussianProcessFactorAnalysis(object):
                     Ki = Kb[idxs, :][:, idxs]
                     Ki_inv = np.linalg.inv(Ki)
                     xpx = Sigma_mu_mu_xb[idxs, :][:, idxs]
-                    dEdKi = .5 *(-Ki_inv + Ki_inv.dot(xpx).dot(Ki_inv))
-                    dKidti = var_f * (delta_tb**2 / np.exp(lti)**3) * np.exp(-delta_tb**2 / (2 * np.exp(lti)**2 ))
-                    df[ii] += np.trace( np.dot(dEdKi.T, dKidti) ) * np.exp(lti)
+                    dEdKi = .5 * (-Ki_inv + Ki_inv.dot(xpx).dot(Ki_inv))
+                    dKidti = (var_f * (delta_tb**2 / np.exp(lti)**3) *
+                              np.exp(-delta_tb**2 / (2 * np.exp(lti)**2)))
+                    df[ii] += np.trace(np.dot(dEdKi.T, dKidti)) * np.exp(lti)
             if self.verbose == 2:
                 print('tau opt', f)
 
@@ -492,22 +503,19 @@ class GaussianProcessFactorAnalysis(object):
         -------
         x : ndarray (time, n_factors)
         """
-        n = y[0].shape[1]
         T = [yi.shape[0] for yi in y]
         big_d = [np.tile(self.d_, Ti) for Ti in T]
         big_y = [yi.ravel() for yi in y]
-        C = self.C_
-        R = self.R_
         if big_K is None:
             big_K = {Ti: None for Ti in set(T)}
 
         big_K = {Ti: calc_big_K(Ti, self.n_factors, self.tau_, self.var_n, big_K[Ti])
                  for Ti in set(T)}
         R_inv = np.linalg.inv(self.R_)
-        big_dy = [big_yi - big_di  for big_yi, big_di in zip(big_y, big_d)]
-        KCt = {Ti: block_dot_B(big_K[Ti], C.T, Ti) for Ti in set(T)}
+        big_dy = [big_yi - big_di for big_yi, big_di in zip(big_y, big_d)]
+        KCt = {Ti: block_dot_B(big_K[Ti], self.C_.T, Ti) for Ti in set(T)}
 
-        KCt_CKCtR_inv = {Ti: KCt[Ti].dot(matrix_inversion_identity(R_inv, big_K[Ti], C, Ti))
+        KCt_CKCtR_inv = {Ti: KCt[Ti].dot(matrix_inversion_identity(R_inv, big_K[Ti], self.C_, Ti))
                          for Ti in T}
         mean = [KCt_CKCtR_inv[Ti].dot(big_dyi) for Ti, big_dyi in zip(T, big_dy)]
         return mean, big_K, big_dy, KCt, KCt_CKCtR_inv

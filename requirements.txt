@@ -1,6 +1,7 @@
 numpy
 scipy
 h5py
+pandas
 scikit-learn
 torch
 torchvision

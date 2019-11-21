@@ -11,6 +11,7 @@ from .dca import DynamicalComponentsAnalysis
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
+
 def linear_decode_r2(X_train, Y_train, X_test, Y_test, decoding_window=1, offset=0):
     """Train a linear model on the training set and test on the test set.
 
@@ -65,7 +66,7 @@ def linear_decode_r2(X_train, Y_train, X_test, Y_test, decoding_window=1, offset
         X_test_lags = X_test_lags[0]
     else:
         X_test_lags = np.concatenate(X_test_lags)
-        
+
     if len(Y_test) == 1:
         Y_test = Y_test[0]
     else:
@@ -145,9 +146,6 @@ def run_analysis(X, Y, T_pi_vals, dim_vals, offset_vals, num_cv_folds, decoding_
                                               decoding_window=decoding_window, offset=offset)
                     results[fold_idx, dim_idx, offset_idx, T_pi_idx + 2] = r2_dca
     return results
-
-
-
 
 
 def random_complement(proj, size=1, random_state=None):

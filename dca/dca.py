@@ -6,7 +6,7 @@ from scipy.signal.windows import hann
 import torch
 import torch.nn.functional as F
 
-from .cov_util import calc_cross_cov_mats_from_data, calc_pi_from_cross_cov_mats
+from .cov_util import (calc_cross_cov_mats_from_data, calc_pi_from_cross_cov_mats, form_lag_matrix)
 
 __all__ = ["DynamicalComponentsAnalysis",
            "DynamicalComponentsAnalysisKNN",
@@ -441,10 +441,7 @@ class DynamicalComponentsAnalysisKNN(object):
         self.n_init = n_init
         self.tol = tol
         self.ortho_lambda = ortho_lambda
-        self.verbose=verbose
-        self.device = device
-        self.dtype = dtype
-        self.use_scipy = use_scipy
+        self.verbose = verbose
         self.coef_ = None
 
     def fit(self, X, d=None, n_init=None):
@@ -463,6 +460,7 @@ class DynamicalComponentsAnalysisKNN(object):
         return self
 
     def _fit_projection(self, X, d=None):
+        from info_measures.continuous import kraskov_stoegbauer_grassberger as ksg
         if d is None:
             d = self.d
         if self.cross_covs is None:
@@ -485,6 +483,7 @@ class DynamicalComponentsAnalysisKNN(object):
 
         callback = None
         if self.verbose:
+
             def callback(v_flat):
                 v = v_flat.reshape(N, d)
                 X_lag = form_lag_matrix(X.dot(v), 2 * self.T)
@@ -495,10 +494,11 @@ class DynamicalComponentsAnalysisKNN(object):
                 print("PI: {} bits, reg: {}".format(str(np.round(pi, 4)),
                                                     str(np.round(reg_val, 4))))
             callback(V_init)
+
         def f(v_flat):
             v = v_flat.reshape(N, d)
-            X_lag = form_lag_matrix(X.dot(v), 2 * T_pi)
-            mi = ksg.MutualInformation(X_lag[:, :T_pi], X_lag[:, T_pi:])
+            X_lag = form_lag_matrix(X.dot(v), 2 * self.T)
+            mi = ksg.MutualInformation(X_lag[:, :self.T], X_lag[:, self.T:])
             pi = mi.mutual_information()
             reg_val = ortho_reg_fn(v, self.ortho_lambda)
             loss = -pi + reg_val
@@ -508,7 +508,7 @@ class DynamicalComponentsAnalysisKNN(object):
 
         # Orthonormalize the basis prior to returning it
         V_opt = scipy.linalg.orth(v)
-        final_pi = calc_pi_from_cross_cov_mats(c, V_opt).detach().cpu().numpy()
+        final_pi = self.score(X, V_opt)
         return V_opt, final_pi
 
     def transform(self, X):
@@ -519,8 +519,11 @@ class DynamicalComponentsAnalysisKNN(object):
         self.fit(X, d=d, T=T, regularization=regularization, reg_ops=reg_ops)
         return self.transform(X)
 
-    def score(self, X):
-        X_lag = form_lag_matrix(X.dot(self.coef_), 2 * T_pi)
-        mi = ksg.MutualInformation(X_lag[:, :T_pi], X_lag[:, T_pi:])
+    def score(self, X, coef=None):
+        if coef is None:
+            coef = self.coef_
+        from info_measures.continuous import kraskov_stoegbauer_grassberger as ksg
+        X_lag = form_lag_matrix(X.dot(coef), 2 * self.T)
+        mi = ksg.MutualInformation(X_lag[:, :self.T], X_lag[:, self.T:])
         pi = mi.mutual_information()
         return pi

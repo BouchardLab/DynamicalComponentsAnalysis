@@ -143,7 +143,7 @@ def sample_gp(T, N, kernel, num_to_concat=1):
     return sample
 
 
-def embed_gp(T, N, d, kernel, noise_cov, T_pi=None, num_to_concat=1):
+def embed_gp(T, N, d, kernel, noise_cov, T_pi, num_to_concat=1):
     """Embed a d-dimensional Gaussian process into N-dimensional space, then
     add (potentially) spatially structured white noise.
     ----------

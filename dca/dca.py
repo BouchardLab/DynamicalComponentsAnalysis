@@ -307,6 +307,8 @@ class DynamicalComponentsAnalysisFFT(object):
                  ortho_lambda=10., verbose=False,
                  device="cpu", dtype=torch.float64):
         self.d = d
+        if d > 1:
+            raise ValueError('DCAFFT is only defined for d=1.')
         self.T = T
         self.init = init
         self.n_init = n_init
@@ -317,7 +319,7 @@ class DynamicalComponentsAnalysisFFT(object):
         self.dtype = dtype
         self.cross_covs = None
 
-    def fit(self, X, d=None, n_init=None):
+    def fit(self, X, d=None, T=None, n_init=None):
         self.mean_ = X.mean(axis=0, keepdims=True)
         X = X - self.mean_
         if n_init is None:
@@ -334,6 +336,8 @@ class DynamicalComponentsAnalysisFFT(object):
     def _fit_projection(self, X, d=None):
         if d is None:
             d = self.d
+        if d > 1:
+            raise ValueError('DCAFFT is only defined for d=1.')
 
         N = X.shape[1]
         if type(self.init) == str:
@@ -409,7 +413,7 @@ class DynamicalComponentsAnalysisFFT(object):
 
     def fit_transform(self, X, d=None, T=None, regularization=None,
                       reg_ops=None):
-        self.fit(X, d=d, T=T, regularization=regularization, reg_ops=reg_ops)
+        self.fit(X, d=d, T=T)
         return self.transform(X)
 
     def score(self):
@@ -444,7 +448,7 @@ class DynamicalComponentsAnalysisKNN(object):
         self.verbose = verbose
         self.coef_ = None
 
-    def fit(self, X, d=None, n_init=None):
+    def fit(self, X, d=None, T=None, n_init=None):
         self.mean_ = X.mean(axis=0, keepdims=True)
         X -= self.mean_
         if n_init is None:
@@ -463,8 +467,6 @@ class DynamicalComponentsAnalysisKNN(object):
         from info_measures.continuous import kraskov_stoegbauer_grassberger as ksg
         if d is None:
             d = self.d
-        if self.cross_covs is None:
-            raise ValueError('Call estimate_cross_covariance() first.')
 
         N = X.shape[1]
         if type(self.init) == str:
@@ -514,9 +516,8 @@ class DynamicalComponentsAnalysisKNN(object):
     def transform(self, X):
         return (X - self.mean_).dot(self.coef_)
 
-    def fit_transform(self, X, d=None, T=None, regularization=None,
-                      reg_ops=None):
-        self.fit(X, d=d, T=T, regularization=regularization, reg_ops=reg_ops)
+    def fit_transform(self, X, d=None, T=None):
+        self.fit(X, d=d, T=T)
         return self.transform(X)
 
     def score(self, X, coef=None):

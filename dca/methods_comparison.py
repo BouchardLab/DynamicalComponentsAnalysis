@@ -15,7 +15,7 @@ from .dca import ortho_reg_fn
 
 __all__ = ['GaussianProcessFactorAnalysis',
            'SlowFeatureAnalysis',
-           'ForcastableComponentsAnalysis']
+           'ForecastableComponentsAnalysis']
 
 
 def make_norm_power(X, T_ent):
@@ -42,8 +42,8 @@ def ent_loss_fn(X, proj, T_ent):
     return ent.sum()
 
 
-class ForcastableComponentsAnalysis(object):
-    """Forcastable Components Analysis.
+class ForecastableComponentsAnalysis(object):
+    """Forecastable Components Analysis.
 
     Runs FCA on multidimensional timeseries data X to discover a projection
     onto a d-dimensional subspace which maximizes the entropy of the power spectrum.
@@ -58,7 +58,7 @@ class ForcastableComponentsAnalysis(object):
         Method for initializing the projection matrix.
 
     """
-    def __init__(self, d=None, T=None, init="random_ortho", n_init=1, tol=1e-6,
+    def __init__(self, d, T, init="random_ortho", n_init=1, tol=1e-6,
                  ortho_lambda=10., verbose=False,
                  device="cpu", dtype=torch.float64):
         self.d = d
@@ -72,7 +72,11 @@ class ForcastableComponentsAnalysis(object):
         self.dtype = dtype
         self.cross_covs = None
 
-    def fit(self, X, d=None, n_init=None):
+    def fit(self, X, d=None, T=None, n_init=None):
+        if d is None:
+            d = self.d
+        if T is None:
+            T = self.T
         self.pca = PCA(whiten=True)
         X = self.pca.fit_transform(X)
         if n_init is None:
@@ -162,9 +166,8 @@ class ForcastableComponentsAnalysis(object):
         X = self.pca.transform(X)
         return X.dot(self.coef_)
 
-    def fit_transform(self, X, d=None, T=None, regularization=None,
-                      reg_ops=None):
-        self.fit(X, d=d, T=T, regularization=regularization, reg_ops=reg_ops)
+    def fit_transform(self, X):
+        self.fit(X)
         return self.transform(X)
 
     def score(self, X):
@@ -540,6 +543,9 @@ class GaussianProcessFactorAnalysis(object):
             x = [xi.reshape(yi.shape[0], self.n_factors) for xi, yi in zip(x, y)]
         return x
 
+    def fit_transform(self, X):
+        self.fit(X)
+        return self.transform(X)
 
 class SlowFeatureAnalysis(object):
     """Slow Feature Analysis (SFA)
@@ -601,4 +607,4 @@ class SlowFeatureAnalysis(object):
         if n_components is None:
             n_components = self.n_components
         self.fit(X)
-        return (X - self.mean_) @ self.all_coef_[:, :n_components]
+        return self.transform(X, n_components=n_components)

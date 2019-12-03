@@ -1,6 +1,6 @@
 from .methods_comparison import (GaussianProcessFactorAnalysis,
                                  SlowFeatureAnalysis,
-                                 ForcastableComponentsAnalysis)
+                                 ForecastableComponentsAnalysis)
 from .dca import (DynamicalComponentsAnalysis,
                   DynamicalComponentsAnalysisKNN,
                   DynamicalComponentsAnalysisFFT)
@@ -10,4 +10,4 @@ __all__ = ['DynamicalComponentsAnalysis',
            'DynamicalComponentsAnalysisFFT',
            'GaussianProcessFactorAnalysis',
            'SlowFeatureAnalysis',
-           'ForcastableComponentsAnalysis']
+           'ForecastableComponentsAnalysis']

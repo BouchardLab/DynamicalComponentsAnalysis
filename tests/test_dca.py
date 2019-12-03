@@ -8,7 +8,7 @@ from dca import (DynamicalComponentsAnalysis as DCA,
 
 @pytest.fixture
 def noise_dataset():
-    X = np.random.randn(1000, 10)
+    X = np.random.randn(333, 10)
     return X
 
 
@@ -17,6 +17,41 @@ def test_DCA(noise_dataset):
     """
     X = noise_dataset
     model = DCA(d=3, T=10)
+    model.fit(X)
+    model.transform(X)
+    model.fit_transform(X)
+    model.score()
+
+
+    model = DCA(d=3, T=10, n_init=2)
+    model.fit(X)
+
+    model = DCA(d=3, T=10, use_scipy=False)
+    model.fit(X)
+
+    model = DCA(d=3, T=10, verbose=True)
+    model.fit(X)
+
+
+def test_init(noise_dataset):
+    X = noise_dataset
+    model = DCA(d=3, T=10, init='random')
+    model.fit(X)
+    model = DCA(d=3, T=10, init='uniform')
+    model.fit(X)
+
+
+def test_input_type():
+    """Test that a list of 2d arrays or a 3d array work.
+    """
+    model = DCA(d=3, T=10)
+
+    X = [np.random.randn(1000, 10) for ii in range(3)]
+    model.fit(X)
+    model.transform(X)
+    model.fit_transform(X)
+
+    X = np.random.randn(3, 1000, 10)
     model.fit(X)
     model.transform(X)
     model.fit_transform(X)

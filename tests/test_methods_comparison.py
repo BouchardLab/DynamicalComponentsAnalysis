@@ -1,9 +1,49 @@
 import numpy as np
 from scipy.linalg import block_diag
 from numpy.testing import (assert_allclose)
+import pytest
 
 from dca.methods_comparison import (make_block_diag, block_dot_A, block_dot_B,
-                                    block_dot_AB, matrix_inversion_identity)
+                                    block_dot_AB, matrix_inversion_identity,
+                                    ForecastableComponentsAnalysis as FCA,
+                                    GaussianProcessFactorAnalysis as GPFA,
+                                    SlowFeatureAnalysis as SFA)
+
+
+@pytest.fixture
+def noise_dataset():
+    X = np.random.randn(111, 7)
+    return X
+
+
+def test_FCA(noise_dataset):
+    """Test that a FCA model can be fit with no errors.
+    """
+    X = noise_dataset
+    model = FCA(d=3, T=10)
+    model.fit(X)
+    model.transform(X)
+    model.fit_transform(X)
+
+
+def test_GPFA(noise_dataset):
+    """Test that a GPFA model can be fit with no errors.
+    """
+    X = noise_dataset
+    model = GPFA(n_factors=3)
+    model.fit(X)
+    model.transform(X)
+    model.fit_transform(X)
+
+
+def test_SFA(noise_dataset):
+    """Test that a SFA model can be fit with no errors.
+    """
+    X = noise_dataset
+    model = SFA(n_components=3)
+    model.fit(X)
+    model.transform(X)
+    model.fit_transform(X)
 
 
 def test_make_block_diag():

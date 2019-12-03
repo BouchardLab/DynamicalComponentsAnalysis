@@ -22,7 +22,6 @@ def test_DCA(noise_dataset):
     model.fit_transform(X)
     model.score()
 
-
     model = DCA(d=3, T=10, n_init=2)
     model.fit(X)
 

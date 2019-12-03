@@ -547,6 +547,7 @@ class GaussianProcessFactorAnalysis(object):
         self.fit(X)
         return self.transform(X)
 
+    
 class SlowFeatureAnalysis(object):
     """Slow Feature Analysis (SFA)
 

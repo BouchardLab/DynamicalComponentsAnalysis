@@ -33,7 +33,7 @@ def test_run_analysis(noise_dataset):
 
 
 def test_run_dim_analysis_dca(noise_dataset):
-    """Test that run_analysis runs.
+    """Test that run_dim_analysis_dca runs.
     """
     X, y = noise_dataset
 

@@ -108,7 +108,7 @@ def run_analysis(X, Y, T_pi_vals, dim_vals, offset_vals, num_cv_folds, decoding_
         sfa_model = SFA(1).fit(X_train_ctd)
 
         # make DCA object
-        opt = DynamicalComponentsAnalysis()
+        opt = DynamicalComponentsAnalysis(d=1, T=1)
 
         # loop over dimensionalities
         for dim_idx in range(len(dim_vals)):
@@ -210,8 +210,8 @@ def run_dim_analysis_dca(X, Y, T_pi, dim_vals, offset, num_cv_folds, decoding_wi
         # compute cross-cov mats for DCA
         cross_cov_mats = calc_cross_cov_mats_from_data(X_train_ctd, 2 * T_pi)
 
-        # make DCA object
-        opt = DynamicalComponentsAnalysis()
+        # make DCA object with arb parameters
+        opt = DynamicalComponentsAnalysis(d=1, T=1)
 
         # loop over dimensionalities
         for dim_idx in range(len(dim_vals)):

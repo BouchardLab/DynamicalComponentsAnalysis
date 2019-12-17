@@ -96,7 +96,7 @@ def calc_cross_cov_mats_from_cov(cov, T, N):
     """Calculates T N-by-N cross-covariance matrices given
     a N*T-by-N*T spatiotemporal covariance matrix by
     averaging over off-diagonal cross-covariance blocks with
-    constant |t1-t2|.
+    constant `|t1-t2|`.
     Parameters
     ----------
     N : int
@@ -142,14 +142,16 @@ def calc_cross_cov_mats_from_cov(cov, T, N):
 
 
 def calc_cov_from_cross_cov_mats(cross_cov_mats):
-    """Calculates the N*T-by-N*T spatiotemporal covariance matrix
-    based on T N-by-N cross-covariance matrices.
+    """Calculates the N*T-by-N*T spatiotemporal covariance matrix based on
+    T N-by-N cross-covariance matrices.
+
     Parameters
     ----------
     cross_cov_mats : np.ndarray, shape (T, N, N)
         Cross-covariance matrices: cross_cov_mats[dt] is the
         cross-covariance between X(t) and X(t+dt), where each
         of X(t) and X(t+dt) is a N-dimensional vector.
+
     Returns
     -------
     cov : np.ndarray, shape (N*T, N*T)
@@ -232,6 +234,7 @@ def calc_pi_from_cov(cov_2_T_pi):
 
 def project_cross_cov_mats(cross_cov_mats, proj):
     """Projects the cross covariance matrices.
+
     Parameters
     ----------
     cross_cov_mats : np.ndarray, shape (T, N, N)
@@ -242,6 +245,7 @@ def project_cross_cov_mats(cross_cov_mats, proj):
         If provided, the N-dimensional data are projected onto a d-dimensional
         basis given by the columns of proj. Then, the mutual information is
         computed for this d-dimensional timeseries.
+
     Returns
     -------
     cross_cov_mats_proj : ndarray, shape (T, d, d)
@@ -277,6 +281,7 @@ def project_cross_cov_mats(cross_cov_mats, proj):
 def calc_pi_from_cross_cov_mats(cross_cov_mats, proj=None):
     """Calculates predictive information for a spatiotemporal Gaussian
     process with T-1 N-by-N cross-covariance matrices.
+
     Parameters
     ----------
     cross_cov_mats : np.ndarray, shape (T, N, N)
@@ -287,6 +292,7 @@ def calc_pi_from_cross_cov_mats(cross_cov_mats, proj=None):
         If provided, the N-dimensional data are projected onto a d-dimensional
         basis given by the columns of proj. Then, the mutual information is
         computed for this d-dimensional timeseries.
+
     Returns
     -------
     PI : float

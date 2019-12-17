@@ -5,13 +5,22 @@ python:
   - 3.6
   - 3.7
 install:
-    - pip install -r requirements.txt
-    - pip install flake8 codecov
+    - wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh;
+    - bash miniconda.sh -b -p $HOME/miniconda
+    - source "$HOME/miniconda/etc/profile.d/conda.sh"
+    - hash -r
+    - conda config --set always_yes yes --set changeps1 no
+    - conda update -q conda
+    - conda info -a
+    - conda env create -q -n test python=$TRAVIS_PYTHON_VERSION --file environment.yml
+    - conda activate test
+    - conda install flake8 codecov pytest-cov
+    - pip install sphinx_rtd_theme
     - python setup.py build
     - python setup.py develop
-    - pip install pytest-cov
 script:
     - flake8 dca tests
-    - pytest --cov=./ tests
+    - pytest -sv --cov=./ tests
+    - sphinx-build -W -b html docs/source docs/build
 after_success:
     - codecov

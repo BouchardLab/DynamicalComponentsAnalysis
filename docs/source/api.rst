@@ -5,7 +5,7 @@ API
 ===
 
 .. toctree::
-    :maxdepth: 1
+    :maxdepth: 2
 
     dca/dca
     dca/methods_comparison

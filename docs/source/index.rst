@@ -11,7 +11,7 @@ and analyses used in the paper [Clark2019]_.
 
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
    :caption: Contents:
 
    introduction

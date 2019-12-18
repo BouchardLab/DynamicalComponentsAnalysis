@@ -21,13 +21,6 @@ project_root = os.path.dirname(os.path.dirname(os.getcwd()))
 # This lets us ensure that the source package is imported, and that its
 # version is used.
 sys.path.insert(0, project_root)
-print()
-print()
-print('==========================================')
-print(project_root)
-print(sys.path)
-print('==========================================')
-print()
 
 
 # -- Project information -----------------------------------------------------

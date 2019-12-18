@@ -15,7 +15,7 @@ import sys
 import sphinx_rtd_theme
 
 # Get the project root dir, which is the parent parent dir of this
-project_root = os.path.dirname(os.getcwd())
+project_root = os.path.dirname(os.path.dirname(os.getcwd()))
 
 # Insert the project root dir as the first element in the PYTHONPATH.
 # This lets us ensure that the source package is imported, and that its

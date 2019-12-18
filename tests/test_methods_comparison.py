@@ -30,7 +30,7 @@ def test_GPFA(noise_dataset):
     """Test that a GPFA model can be fit with no errors.
     """
     X = noise_dataset
-    model = GPFA(n_factors=3)
+    model = GPFA(n_factors=3, tol=1e-4)  # lower tol to make test faster
     model.fit(X)
     model.transform(X)
     model.fit_transform(X)

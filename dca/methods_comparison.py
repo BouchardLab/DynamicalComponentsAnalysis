@@ -47,6 +47,7 @@ class ForecastableComponentsAnalysis(object):
 
     Runs FCA on multidimensional timeseries data X to discover a projection
     onto a d-dimensional subspace which maximizes the entropy of the power spectrum.
+
     Parameters
     ----------
     d: int
@@ -293,7 +294,7 @@ class GaussianProcessFactorAnalysis(object):
         Independent noise for the factors.
     tol : float
         The EM iterations stop when
-        |L^k - L^{k+1}|/max{|L^k|,|L^{k+1}|,1} <= tol.
+        `|L^k - L^{k+1}|/max{|L^k|,|L^{k+1}|,1} <= tol`.
     max_iter : int
         Maximum number of EM steps.
     tau_init : float

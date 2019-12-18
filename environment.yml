@@ -1,0 +1,10 @@
+channels:
+  - pytorch
+dependencies:
+  - numpy
+  - scipy
+  - h5py
+  - pandas
+  - scikit-learn
+  - pytorch
+  - cpuonly

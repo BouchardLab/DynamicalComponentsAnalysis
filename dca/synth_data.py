@@ -11,6 +11,7 @@ from .cov_util import (calc_cov_from_cross_cov_mats, calc_cross_cov_mats_from_co
 def gen_gp_cov(kernel, T, N):
     """Generates a T*N-by-T*N covariance matrix for a spatiotemporal Gaussian
     process (2D Gaussian random field) with a provided kernel.
+
     Parameters
     ----------
     T : int
@@ -21,6 +22,7 @@ def gen_gp_cov(kernel, T, N):
         Should be of the form kernel = K(t1, t2, x1, x2).
         The kernel can choose to imlement temporal or spatial stationarity,
         however this is not enfored.
+
     Returns
     -------
     C : np.ndarray, shape (T*N, T*N)
@@ -39,6 +41,7 @@ def gen_gp_cov(kernel, T, N):
 def calc_pi_for_gp(kernel, T_pi, N):
     """Calculates the predictive information in a spatiotemporal Gaussian process
     with a given kernel.
+
     Parameters
     ----------
     T : int
@@ -49,6 +52,7 @@ def calc_pi_for_gp(kernel, T_pi, N):
         Should be of the form kernel = K(t1, t2, x1, x2).
         The kernel can choose to imlement temporal or spatial stationarity,
         however this is not enfored.
+
     Returns
     -------
     PI : float
@@ -67,6 +71,7 @@ def gen_gp_kernel(kernel_type, spatial_scale, temporal_scale,
                   local_noise=0.):
     """Generates a specified type of Kernel for a spatiotemporal Gaussian
     process.
+
     Parameters
     ----------
     kernel_type : string
@@ -75,6 +80,7 @@ def gen_gp_kernel(kernel_type, spatial_scale, temporal_scale,
         Spatial autocorrelation scale.
     temporal_scale : float
         Temporal autocorrelation scale.
+
     Returns
     -------
     K : function
@@ -116,6 +122,7 @@ def gen_gp_kernel(kernel_type, spatial_scale, temporal_scale,
 
 def sample_gp(T, N, kernel, num_to_concat=1):
     """Draw a sample from a spatiotemporal Gaussian process.
+
     Parameters
     ----------
     T : int
@@ -126,6 +133,7 @@ def sample_gp(T, N, kernel, num_to_concat=1):
         Kernel of the form K(t1, t2, x1, x2).
     num_to_concat : int
         Number of samples of lenght T to concatenate before returning the result.
+
     Returns
     -------
     sample : np.ndarray, size (T*num_to_concat, N)
@@ -146,6 +154,8 @@ def sample_gp(T, N, kernel, num_to_concat=1):
 def embed_gp(T, N, d, kernel, noise_cov, T_pi, num_to_concat=1):
     """Embed a d-dimensional Gaussian process into N-dimensional space, then
     add (potentially) spatially structured white noise.
+
+    Parameters
     ----------
     T : int
         Length in time.
@@ -160,6 +170,7 @@ def embed_gp(T, N, d, kernel, noise_cov, T_pi, num_to_concat=1):
         time point in an iid fashion.
     num_to_concat : int
         Number of samples of lenght T to concatenate before returning the result.
+
     Returns
     -------
     X : np.ndarray, size (T*num_to_concat, N)

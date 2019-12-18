@@ -9,8 +9,8 @@ import torch.nn.functional as F
 from .cov_util import (calc_cross_cov_mats_from_data, calc_pi_from_cross_cov_mats, form_lag_matrix)
 
 __all__ = ["DynamicalComponentsAnalysis",
-           "DynamicalComponentsAnalysisKNN",
-           "DynamicalComponentsAnalysisFFT"]
+           "DynamicalComponentsAnalysisFFT",
+           "DynamicalComponentsAnalysisKNN"]
 
 
 def ortho_reg_fn(V, ortho_lambda):
@@ -78,16 +78,30 @@ class DynamicalComponentsAnalysis(object):
     Runs DCA on multidimensional timeseries data X to discover a projection
     onto a d-dimensional subspace which maximizes the complexity of the d-dimensional
     dynamics.
+
     Parameters
     ----------
-    d: int
+    d : int
         Number of basis vectors onto which the data X are projected.
-    T: int
-        Size of time windows accross which to compute mutual information.
-    init: string
-        Options: "random", "PCA"
+    T : int
+        Size of time windows across which to compute mutual information.
+    init : str
+        Options: "random_ortho", "random", or "PCA"
         Method for initializing the projection matrix.
-
+    n_init : int
+        Number of random restarts. Default is 1.
+    tol : float
+        Tolerance for stopping optimization. Default is 1e-6.
+    ortho_lambda : float
+        Coefficient on term that keeps V close to orthonormal.
+    verbose : bool
+        Verbosity during optimization.
+    use_scipy : bool
+        Whether to use SciPy or Pytorch L-BFGS-B. Default is True. Pytorch is not well tested.
+    device : str
+        What device to run the computation on in Pytorch.
+    dtype : pytorch.dtype
+        What dtype to use for computation.
     """
     def __init__(self, d, T, init="random_ortho", n_init=1, tol=1e-6,
                  ortho_lambda=10., verbose=False, use_scipy=True,
@@ -105,6 +119,19 @@ class DynamicalComponentsAnalysis(object):
         self.use_scipy = use_scipy
 
     def estimate_cross_covariance(self, X, T=None, regularization=None, reg_ops=None):
+        """Estimate the cross covariance matrix from data.
+
+        Parameters
+        ----------
+        X : ndarray or list of ndarrays
+            Data to estimate the cross covariance matrix.
+        T : int
+            T for PI calculation (optional.)
+        regularization : str
+            Whether to regularize cross covariance estimation.
+        reg_ops : dict
+            Options for cross covariance regularization.
+        """
         if T is None:
             T = self.T
         else:
@@ -118,6 +145,15 @@ class DynamicalComponentsAnalysis(object):
         return self
 
     def fit_projection(self, d=None, n_init=None):
+        """Fit the projection matrix.
+
+        Parameters
+        ----------
+        d : int
+            Dimensionality of the projection (optional.)
+        n_init : int
+            Number of random restarts (optional.)
+        """
         if n_init is None:
             n_init = self.n_init
         pis = []
@@ -130,6 +166,15 @@ class DynamicalComponentsAnalysis(object):
         self.coef_ = coefs[idx]
 
     def _fit_projection(self, d=None, record_V=False):
+        """Fit the projection matrix.
+
+        Parameters
+        ----------
+        d : int
+            Dimensionality of the projection (optional.)
+        record_V : bool
+            If True, saves a copy of V at each optimization step. Default is False.
+        """
         if d is None:
             d = self.d
         if d < 1:
@@ -224,13 +269,37 @@ class DynamicalComponentsAnalysis(object):
         final_pi = calc_pi_from_cross_cov_mats(c, V_opt).detach().cpu().numpy()
         return V_opt, final_pi
 
-    def fit(self, X, d=None, T=None, regularization=None, reg_ops=None):
+    def fit(self, X, d=None, T=None, regularization=None, reg_ops=None, n_init=None):
+        """Estimate the cross covariance matrix and fit the projection matrix.
+
+        Parameters
+        ----------
+        X : ndarray or list of ndarrays
+            Data to estimate the cross covariance matrix.
+        d : int
+            Dimensionality of the projection (optional.)
+        T : int
+            T for PI calculation (optional.)
+        regularization : str
+            Whether to regularize cross covariance estimation.
+        reg_ops : dict
+            Options for cross covariance regularization.
+        n_init : int
+            Number of random restarts (optional.)
+        """
         self.estimate_cross_covariance(X, T=T, regularization=regularization,
                                        reg_ops=reg_ops)
-        self.fit_projection(d=d)
+        self.fit_projection(d=d, n_init=n_init)
         return self
 
     def transform(self, X):
+        """Project the data onto the DCA components.
+
+        Parameters
+        ----------
+        X : ndarray or list of ndarrays
+            Data to estimate the cross covariance matrix.
+        """
         if isinstance(X, list):
             y = [(Xi - Xi.mean(axis=0, keepdims=True)).dot(self.coef_) for Xi in X]
         elif X.ndim == 3:
@@ -240,11 +309,31 @@ class DynamicalComponentsAnalysis(object):
         return y
 
     def fit_transform(self, X, d=None, T=None, regularization=None,
-                      reg_ops=None):
-        self.fit(X, d=d, T=T, regularization=regularization, reg_ops=reg_ops)
+                      reg_ops=None, n_init=None):
+        """Estimate the cross covariance matrix and fit the projection matrix. Then
+        project the data onto the DCA components.
+
+        Parameters
+        ----------
+        X : ndarray or list of ndarrays
+            Data to estimate the cross covariance matrix.
+        d : int
+            Dimensionality of the projection (optional.)
+        T : int
+            T for PI calculation (optional.)
+        regularization : str
+            Whether to regularize cross covariance estimation.
+        reg_ops : dict
+            Options for cross covariance regularization.
+        n_init : int
+            Number of random restarts (optional.)
+        """
+        self.fit(X, d=d, T=T, regularization=regularization, reg_ops=reg_ops, n_init=n_init)
         return self.transform(X)
 
     def score(self):
+        """Calculate the PI of the training data for the DCA projection.
+        """
         return calc_pi_from_cross_cov_mats(self.cross_covs, self.coef_)
 
 
@@ -288,20 +377,22 @@ def pi_fft(X, proj, T_pi):
 
 
 class DynamicalComponentsAnalysisFFT(object):
-    """Dynamical Components Analysis.
+    """Dynamical Components Analysis using FFT for PI calculation.
+
+    Currently only well-defined for `d=1`.
 
     Runs DCA on multidimensional timeseries data X to discover a projection
     onto a d-dimensional subspace which maximizes the dynamical complexity.
+
     Parameters
     ----------
-    d: int
+    d : int
         Number of basis vectors onto which the data X are projected.
-    T: int
-        Size of time windows accross which to compute mutual information.
-    init: string
+    T : int
+        Size of time windows across which to compute mutual information.
+    init : string
         Options: "random", "PCA"
         Method for initializing the projection matrix.
-
     """
     def __init__(self, d=None, T=None, init="random_ortho", n_init=1, tol=1e-6,
                  ortho_lambda=10., verbose=False,
@@ -421,21 +512,24 @@ class DynamicalComponentsAnalysisFFT(object):
 
 
 class DynamicalComponentsAnalysisKNN(object):
-    """Dynamical Components Analysis.
+    """Dynamical Components Analysis using MI estimation using the
+    k-nearest neighbors methos of Kraskov, et al.
+
+    WARNING: This code has not been used or tested and is still being developed.
 
     Runs DCA on multidimensional timeseries data X to discover a projection
     onto a d-dimensional subspace which maximizes the complexity of the d-dimensional
     dynamics.
+
     Parameters
     ----------
-    d: int
+    d : int
         Number of basis vectors onto which the data X are projected.
-    T: int
-        Size of time windows accross which to compute mutual information.
-    init: string
+    T : int
+        Size of time windows across which to compute mutual information.
+    init : string
         Options: "random", "PCA"
         Method for initializing the projection matrix.
-
     """
     def __init__(self, d=None, T=None, init="random", n_init=1, tol=1e-6,
                  ortho_lambda=10., verbose=False, use_scipy=True):

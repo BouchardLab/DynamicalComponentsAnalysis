@@ -13,6 +13,7 @@
 import os
 import sys
 import sphinx_rtd_theme
+
 # Get the project root dir, which is the parent parent dir of this
 project_root = os.path.dirname(os.getcwd())
 
@@ -20,6 +21,13 @@ project_root = os.path.dirname(os.getcwd())
 # This lets us ensure that the source package is imported, and that its
 # version is used.
 sys.path.insert(0, project_root)
+print()
+print()
+print('==========================================')
+print(project_root)
+print(sys.path)
+print('==========================================')
+print()
 
 
 # -- Project information -----------------------------------------------------

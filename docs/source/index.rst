@@ -15,6 +15,7 @@ and analyses used in the paper [Clark2019]_.
    :caption: Contents:
 
    introduction
+   installation
    api
 
 

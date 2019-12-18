@@ -4,13 +4,27 @@
 
 Implementation of the methods and analyses in [Unsupervised Discovery of Temporal Structure in Noisy Data with Dynamical Components Analysis](https://arxiv.org/abs/1905.09944).
 
-To install, you can clone the repository and `cd` into the DynamicalComponentsAnalysis folder. If you are installing into an active conda environment, you can run
+Documentation can be found at https://dynamicalcomponentsanalysis.readthedocs.io/en/latest/index.html
+
+To install, you can clone the repository and `cd` into the DynamicalComponentsAnalysis folder.
 
 ```bash
-conda env update --file environment.yml
-pip install -e .
+# use ssh
+$ git clone git@github.com:BouchardLab/DynamicalComponentsAnalysis.git
+# or use https
+$ git clone https://github.com/BouchardLab/DynamicalComponentsAnalysis.git
+$ cd DynamicalComponentsAnalysis
+```
+
+If you are installing into an active conda environment, you can run
+
+```bash
+$ conda env update --file environment.yml
+$ pip install -e .
 ```
 
 If you are installing with `pip` you can run
 
-`pip install -e . -r requirements.txt`
+```bash
+$ pip install -e . -r requirements.txt
+```

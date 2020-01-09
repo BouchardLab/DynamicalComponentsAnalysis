@@ -55,7 +55,7 @@ def calc_chunked_cov(X, T, stride, chunks, cov_est=None):
     return cov_est, n_samples
 
 
-def calc_cross_cov_mats_from_data(X, T, chunks=10, regularization=None, reg_ops=None):
+def calc_cross_cov_mats_from_data(X, T, chunks=None, regularization=None, reg_ops=None):
     """Compute a N-by-N cross-covariance matrix, where N is the data dimensionality,
     for each time lag up to T-1.
 
@@ -82,14 +82,14 @@ def calc_cross_cov_mats_from_data(X, T, chunks=10, regularization=None, reg_ops=
     if reg_ops is None:
         reg_ops = dict()
     stride = reg_ops.get('stride', 1)
-    if chunks > 1 and regularization is not None:
+    if chunks is not None and regularization is not None:
         raise NotImplementedError
 
     if isinstance(X, list) or X.ndim == 3:
         mean = np.concatenate(X).mean(axis=0, keepdims=True)
         X = [Xi - mean for Xi in X]
         N = X[0].shape[-1]
-        if chunks == 1:
+        if chunks is None:
             X_with_lags = np.concatenate([form_lag_matrix(Xi, T, stride=stride) for Xi in X])
         else:
             n_samples = 0
@@ -97,21 +97,21 @@ def calc_cross_cov_mats_from_data(X, T, chunks=10, regularization=None, reg_ops=
             for Xi in X:
                 cov_est, ni_samples = calc_chunked_cov(Xi, T, stride, chunks, cov_est=cov_est)
                 n_samples += ni_samples
-            cov_est /= n_samples
+            cov_est /= (n_samples - 1.)
             cov_est = toeplitzify(cov_est, T, N)
     else:
         X = X - X.mean(axis=0, keepdims=True)
         N = X.shape[-1]
-        if chunks == 1:
+        if chunks is None:
             X_with_lags = form_lag_matrix(X, T, stride=stride)
         else:
             cov_est, n_samples = calc_chunked_cov(X, T, stride, chunks)
-            cov_est /= n_samples
+            cov_est /= (n_samples - 1.)
             cov_est = toeplitzify(cov_est, T, N)
 
-    if chunks > 1:
+    if chunks is not None:
         pass
-    elif regularization is None and chunks == 1:
+    elif regularization is None and chunks is None:
         cov_est = np.cov(X_with_lags, rowvar=False)
         cov_est = toeplitzify(cov_est, T, N)
     elif regularization == 'kron':

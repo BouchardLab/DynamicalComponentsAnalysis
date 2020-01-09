@@ -23,17 +23,21 @@ def test_cross_cov_mats_from_data_chunks_2d():
     """Test whether chunking the lagged matrix gives the same cross covariance matrices
     with 2d inputs."""
     np.random.seed(0)
-    X = np.random.randn(10000, 10)
-    ccms = calc_cross_cov_mats_from_data(X, 5)
-    ccms2 = calc_cross_cov_mats_from_data(X, 5, chunks=10)
-    assert_allclose(ccms, ccms2, atol=1e-3)
+    cov = np.random.randn(10, 10)
+    cov = cov.T.dot(cov) + np.eye(10)
+    X = np.random.multivariate_normal(np.zeros(10), cov, size=10000)
+    ccms = calc_cross_cov_mats_from_data(X, 3)
+    ccms2 = calc_cross_cov_mats_from_data(X, 3, chunks=1)
+    assert_allclose(ccms, ccms2, rtol=1e-2)
 
 
 def test_cross_cov_mats_from_data_chunks_3d():
     """Test whether chunking the lagged matrix gives the same cross covariance matrices
     with 3d inputs."""
     np.random.seed(1)
-    X = np.random.randn(3, 3000, 10)
-    ccms = calc_cross_cov_mats_from_data(X, 5)
-    ccms2 = calc_cross_cov_mats_from_data(X, 5, chunks=10)
-    assert_allclose(ccms, ccms2, atol=1e-3)
+    cov = np.random.randn(10, 10)
+    cov = cov.T.dot(cov) + np.eye(10)
+    X = np.random.multivariate_normal(np.zeros(10), cov, size=10000)
+    ccms = calc_cross_cov_mats_from_data(X, 3)
+    ccms2 = calc_cross_cov_mats_from_data(X, 3, chunks=1)
+    assert_allclose(ccms, ccms2, rtol=1e-2)

@@ -138,6 +138,7 @@ class DynamicalComponentsAnalysis(object):
             self.T = T
 
         cross_covs = calc_cross_cov_mats_from_data(X, 2 * self.T,
+                                                   chunks=10,
                                                    regularization=regularization,
                                                    reg_ops=reg_ops)
         self.cross_covs = torch.tensor(cross_covs, device=self.device, dtype=self.dtype)

@@ -44,7 +44,7 @@ def calc_chunked_cov(X, T, stride, chunks, cov_est=None):
     n_samples = 0
     if X.shape[0] <= T * chunks:
         raise ValueError
-    ends = np.linspace(0, X.shape[0], chunks+1, dtype=int)[1:]
+    ends = np.linspace(0, X.shape[0], chunks + 1, dtype=int)[1:]
     start = 0
     for chunk in range(chunks):
         X_with_lags = form_lag_matrix(X[start:ends[chunk]], T, stride=stride)
@@ -102,7 +102,7 @@ def calc_cross_cov_mats_from_data(X, T, chunks=10, regularization=None, reg_ops=
     else:
         X = X - X.mean(axis=0, keepdims=True)
         N = X.shape[-1]
-        if chunks ==1:
+        if chunks == 1:
             X_with_lags = form_lag_matrix(X, T, stride=stride)
         else:
             cov_est, n_samples = calc_chunked_cov(X, T, stride, chunks)

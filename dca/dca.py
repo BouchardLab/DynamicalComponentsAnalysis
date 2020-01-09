@@ -103,7 +103,7 @@ class DynamicalComponentsAnalysis(object):
     dtype : pytorch.dtype
         What dtype to use for computation.
     """
-    def __init__(self, d, T, init="random_ortho", n_init=1, tol=1e-6,
+    def __init__(self, d=None, T=None, init="random_ortho", n_init=1, tol=1e-6,
                  ortho_lambda=10., verbose=False, use_scipy=True,
                  device="cpu", dtype=torch.float64):
         self.d = d

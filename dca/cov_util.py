@@ -55,7 +55,7 @@ def calc_chunked_cov(X, T, stride, chunks, cov_est=None):
     return cov_est, n_samples
 
 
-def calc_cross_cov_mats_from_data(X, T, chunks=1, regularization=None, reg_ops=None):
+def calc_cross_cov_mats_from_data(X, T, chunks=10, regularization=None, reg_ops=None):
     """Compute a N-by-N cross-covariance matrix, where N is the data dimensionality,
     for each time lag up to T-1.
 

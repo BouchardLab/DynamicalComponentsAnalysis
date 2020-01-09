@@ -35,7 +35,27 @@ def toeplitzify(C, T, N, symmetrize=True):
     return C_toep
 
 
-def calc_cross_cov_mats_from_data(X, T, regularization=None, reg_ops=None):
+def calc_chunked_cov(X, T, stride, chunks, cov_est=None):
+    """Calculate an unormalized (by sample count) lagged covariance matrix
+    in chunks to save memory.
+    """
+    if cov_est is None:
+        cov_est = 0.
+    n_samples = 0
+    if X.shape[0] <= T * chunks:
+        raise ValueError
+    ends = np.linspace(0, X.shape[0], chunks + 1, dtype=int)[1:]
+    start = 0
+    for chunk in range(chunks):
+        X_with_lags = form_lag_matrix(X[start:ends[chunk]], T, stride=stride)
+        start = ends[chunk] - T + 1
+        ni_samples = X_with_lags.shape[0]
+        cov_est = cov_est + np.dot(X_with_lags.T, X_with_lags)
+        n_samples += ni_samples
+    return cov_est, n_samples
+
+
+def calc_cross_cov_mats_from_data(X, T, chunks=10, regularization=None, reg_ops=None):
     """Compute a N-by-N cross-covariance matrix, where N is the data dimensionality,
     for each time lag up to T-1.
 
@@ -44,8 +64,11 @@ def calc_cross_cov_mats_from_data(X, T, regularization=None, reg_ops=None):
     X : np.ndarray, shape (# time-steps, N)
         The N-dimensional time series data from which the cross-covariance
         matrices are computed.
-    T: int
+    T : int
         The number of time lags.
+    chunks : int
+        Number of chunks to break the data into when calculating the lagged cross
+        covariance. More chunks will mean less memory used
     regularization : string
         Regularization method for computing the spatiotemporal covariance matrix.
     reg_ops : dict
@@ -59,19 +82,36 @@ def calc_cross_cov_mats_from_data(X, T, regularization=None, reg_ops=None):
     if reg_ops is None:
         reg_ops = dict()
     stride = reg_ops.get('stride', 1)
+    if chunks > 1 and regularization is not None:
+        raise NotImplementedError
 
-    # mean center X
     if isinstance(X, list) or X.ndim == 3:
         mean = np.concatenate(X).mean(axis=0, keepdims=True)
         X = [Xi - mean for Xi in X]
         N = X[0].shape[-1]
-        X_with_lags = np.concatenate([form_lag_matrix(Xi, T, stride=stride) for Xi in X])
+        if chunks == 1:
+            X_with_lags = np.concatenate([form_lag_matrix(Xi, T, stride=stride) for Xi in X])
+        else:
+            n_samples = 0
+            cov_est = 0.
+            for Xi in X:
+                cov_est, ni_samples = calc_chunked_cov(Xi, T, stride, chunks, cov_est=cov_est)
+                n_samples += ni_samples
+            cov_est /= n_samples
+            cov_est = toeplitzify(cov_est, T, N)
     else:
         X = X - X.mean(axis=0, keepdims=True)
         N = X.shape[-1]
-        X_with_lags = form_lag_matrix(X, T, stride=stride)
+        if chunks == 1:
+            X_with_lags = form_lag_matrix(X, T, stride=stride)
+        else:
+            cov_est, n_samples = calc_chunked_cov(X, T, stride, chunks)
+            cov_est /= n_samples
+            cov_est = toeplitzify(cov_est, T, N)
 
-    if regularization is None:
+    if chunks > 1:
+        pass
+    elif regularization is None and chunks == 1:
         cov_est = np.cov(X_with_lags, rowvar=False)
         cov_est = toeplitzify(cov_est, T, N)
     elif regularization == 'kron':

@@ -31,6 +31,9 @@ def test_DCA(noise_dataset):
     model = DCA(d=3, T=10, verbose=True)
     model.fit(X)
 
+    model = DCA(d=3, T=10, block_toeplitz=False)
+    model.fit(X)
+
 
 def test_init(noise_dataset):
     X = noise_dataset

@@ -6,7 +6,8 @@ from scipy.signal.windows import hann
 import torch
 import torch.nn.functional as F
 
-from .cov_util import (calc_cross_cov_mats_from_data, calc_pi_from_cross_cov_mats, form_lag_matrix)
+from .cov_util import (calc_cross_cov_mats_from_data, calc_pi_from_cross_cov_mats,
+                       form_lag_matrix, calc_pi_from_cross_cov_mats_block_toeplitz)
 
 __all__ = ["DynamicalComponentsAnalysis",
            "DynamicalComponentsAnalysisFFT",
@@ -40,7 +41,7 @@ def ortho_reg_fn(V, ortho_lambda):
     return reg_val
 
 
-def build_loss(cross_cov_mats, d, lambda_param=1):
+def build_loss(cross_cov_mats, d, ortho_lambda=1., block_toeplitz=True):
     """Constructs a loss function which gives the (negative) predictive
     information in the projection of multidimensional timeseries data X onto a
     d-dimensional basis, where predictive information is computed using a
@@ -53,7 +54,7 @@ def build_loss(cross_cov_mats, d, lambda_param=1):
         mutual information is computed.
     d: int
         Number of basis vectors onto which the data X are projected.
-    lambda_param : float
+    ortho_lambda : float
         Regularization hyperparameter.
     Returns
     -------
@@ -64,10 +65,16 @@ def build_loss(cross_cov_mats, d, lambda_param=1):
     """
     N = cross_cov_mats.shape[1]
 
-    def loss(V_flat):
-        V = V_flat.reshape(N, d)
-        reg_val = ortho_reg_fn(V, lambda_param)
-        return -calc_pi_from_cross_cov_mats(cross_cov_mats, V) + reg_val
+    if block_toeplitz:
+        def loss(V_flat):
+            V = V_flat.reshape(N, d)
+            reg_val = ortho_reg_fn(V, ortho_lambda)
+            return -calc_pi_from_cross_cov_mats(cross_cov_mats, V) + reg_val
+    else:
+        def loss(V_flat):
+            V = V_flat.reshape(N, d)
+            reg_val = ortho_reg_fn(V, ortho_lambda)
+            return -calc_pi_from_cross_cov_mats_block_toeplitz(cross_cov_mats, V) + reg_val
 
     return loss
 
@@ -98,13 +105,16 @@ class DynamicalComponentsAnalysis(object):
         Verbosity during optimization.
     use_scipy : bool
         Whether to use SciPy or Pytorch L-BFGS-B. Default is True. Pytorch is not well tested.
+    block_toeplitz : bool
+        If True, uses the block-Toeplitz logdet algorithm which is typically faster and less
+        memory intensive on cpu for T>~10.
     device : str
         What device to run the computation on in Pytorch.
     dtype : pytorch.dtype
         What dtype to use for computation.
     """
     def __init__(self, d=None, T=None, init="random_ortho", n_init=1, tol=1e-6,
-                 ortho_lambda=10., verbose=False, use_scipy=True,
+                 ortho_lambda=10., verbose=False, use_scipy=True, block_toeplitz=True,
                  device="cpu", dtype=torch.float64):
         self.d = d
         self.T = T
@@ -115,8 +125,9 @@ class DynamicalComponentsAnalysis(object):
         self.verbose = verbose
         self.device = device
         self.dtype = dtype
-        self.cross_covs = None
         self.use_scipy = use_scipy
+        self.block_toeplitz = block_toeplitz
+        self.cross_covs = None
 
     def estimate_cross_covariance(self, X, T=None, regularization=None, reg_ops=None):
         """Estimate the cross covariance matrix from data.
@@ -194,6 +205,8 @@ class DynamicalComponentsAnalysis(object):
                 V_init = V_init + np.random.normal(0, 1e-3, V_init.shape)
             else:
                 raise ValueError
+        elif isinstance(self.init, np.ndarray):
+            V_init = self.init.copy()
         else:
             raise ValueError
         V_init /= np.linalg.norm(V_init, axis=0, keepdims=True)
@@ -216,7 +229,7 @@ class DynamicalComponentsAnalysis(object):
                                                 device=self.device,
                                                 dtype=self.dtype)
                     v_torch = v_flat_torch.reshape(N, d)
-                    loss = build_loss(c, d)(v_torch)
+                    loss = build_loss(c, d, self.ortho_lambda, self.block_toeplitz)(v_torch)
                     reg_val = ortho_reg_fn(v_torch, self.ortho_lambda)
                     loss = loss.detach().cpu().numpy()
                     reg_val = reg_val.detach().cpu().numpy()
@@ -236,7 +249,7 @@ class DynamicalComponentsAnalysis(object):
                                             device=self.device,
                                             dtype=self.dtype)
                 v_torch = v_flat_torch.reshape(N, d)
-                loss = build_loss(c, d)(v_torch)
+                loss = build_loss(c, d, self.ortho_lambda, self.block_toeplitz)(v_torch)
                 loss.backward()
                 grad = v_flat_torch.grad
                 return (loss.detach().cpu().numpy().astype(float),
@@ -246,12 +259,13 @@ class DynamicalComponentsAnalysis(object):
                            callback=callback)
             v = opt.x.reshape(N, d)
         else:
-            optimizer = torch.optim.LBFGS([v], max_eval=10**10, max_iter=10**10,
-                                          tolerance_grad=1e-10, tolerance_change=1e-10)
+            optimizer = torch.optim.LBFGS([v], max_eval=15000, max_iter=15000,
+                                          tolerance_change=self.tol, history_size=10,
+                                          line_search_fn='strong_wolfe')
 
             def closure():
                 optimizer.zero_grad()
-                loss = build_loss(c, d)(v)
+                loss = build_loss(c, d, self.ortho_lambda, self.block_toeplitz)(v)
                 loss.backward()
                 if self.verbose:
                     reg_val = ortho_reg_fn(v, self.ortho_lambda)

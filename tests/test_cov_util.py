@@ -1,10 +1,28 @@
 import numpy as np
-
 from numpy.testing import (assert_allclose)
+import pytest
+import torch
 
+from dca.synth_data import gen_lorenz_data
 from dca.cov_util import (calc_cross_cov_mats_from_cov,
                           calc_cov_from_cross_cov_mats,
-                          calc_cross_cov_mats_from_data)
+                          calc_cross_cov_mats_from_data,
+                          calc_pi_from_cross_cov_mats,
+                          calc_pi_from_cross_cov_mats_block_toeplitz,
+                          calc_pi_from_cov,
+                          calc_pi_from_data)
+
+
+@pytest.fixture
+def lorenz_dataset():
+    rng = np.random.RandomState(20200129)
+    T, d = 20, 31
+    X = rng.randn(10000, d)
+    XL = gen_lorenz_data(10000)
+    X[:, :3] += XL
+    ccms = calc_cross_cov_mats_from_data(X, T=T)
+    ccov = calc_cov_from_cross_cov_mats(ccms)
+    return T, d, X, ccms, ccov
 
 
 def test_cross_cov_round_trip():
@@ -41,3 +59,56 @@ def test_cross_cov_mats_from_data_chunks_3d():
     ccms = calc_cross_cov_mats_from_data(X, 3)
     ccms2 = calc_cross_cov_mats_from_data(X, 3, chunks=1)
     assert_allclose(ccms, ccms2, rtol=1e-2)
+
+
+def test_compare_ccm_cov_pi(lorenz_dataset):
+    """Test whether calculating PI from cross cov mats versus a cov mat
+    gives equivalent PI."""
+    _, _, _, ccms, ccov = lorenz_dataset
+    assert_allclose(calc_pi_from_cross_cov_mats(ccms), calc_pi_from_cov(ccov))
+    tccms = torch.tensor(ccms)
+    tccov = torch.tensor(ccov)
+    assert torch.allclose(calc_pi_from_cross_cov_mats(tccms), calc_pi_from_cov(tccov))
+    assert_allclose(calc_pi_from_cross_cov_mats(ccms),
+                    calc_pi_from_cov(tccov).numpy())
+
+
+def test_compare_ccm_data_pi(lorenz_dataset):
+    """Test whether calculating PI from cross cov mats versus data
+    gives equivalent PI."""
+    T, d, X, ccms, _ = lorenz_dataset
+    assert_allclose(calc_pi_from_cross_cov_mats(ccms), calc_pi_from_data(X, T))
+
+
+def test_compare_ccm_block_toeplitz_pi(lorenz_dataset):
+    """Test whether calculating PI from cross cov mats with and without
+    the block-Toeplitz algorithm gives the same value."""
+    _, _, _, ccms, _ = lorenz_dataset
+    assert_allclose(calc_pi_from_cross_cov_mats(ccms),
+                    calc_pi_from_cross_cov_mats_block_toeplitz(ccms))
+    tccms = torch.tensor(ccms)
+    assert torch.allclose(calc_pi_from_cross_cov_mats(tccms),
+                          calc_pi_from_cross_cov_mats_block_toeplitz(tccms))
+    assert_allclose(calc_pi_from_cross_cov_mats(ccms),
+                    calc_pi_from_cross_cov_mats_block_toeplitz(tccms).numpy())
+
+
+def test_compare_ccm_block_toeplitz_pi_grads(lorenz_dataset):
+    """Test whether calculating the grad of PI from cross cov mats with and without
+    the block-Toeplitz algorithm gives the same value."""
+    _, d, _, ccms, _ = lorenz_dataset
+    assert_allclose(calc_pi_from_cross_cov_mats(ccms),
+                    calc_pi_from_cross_cov_mats_block_toeplitz(ccms))
+    tccms = torch.tensor(ccms)
+    rng = np.random.RandomState(202001291)
+    proj = rng.randn(d, 3)
+    tproj = torch.tensor(proj, requires_grad=True)
+    PI = calc_pi_from_cross_cov_mats(tccms, tproj)
+    PI.backward()
+    grad = tproj.grad
+    tproj = torch.tensor(proj, requires_grad=True)
+    PI_BT = calc_pi_from_cross_cov_mats_block_toeplitz(tccms, tproj)
+    PI_BT.backward()
+    grad_BT = tproj.grad
+
+    assert torch.allclose(grad, grad_BT)

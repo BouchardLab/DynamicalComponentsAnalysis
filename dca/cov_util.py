@@ -349,6 +349,74 @@ def calc_pi_from_cross_cov_mats(cross_cov_mats, proj=None):
     return PI
 
 
+def calc_pi_from_cross_cov_mats_block_toeplitz(cross_cov_mats, proj=None):
+    use_torch = isinstance(cross_cov_mats, torch.Tensor)
+    if proj is not None:
+        ccms = project_cross_cov_mats(cross_cov_mats, proj)
+    else:
+        ccms = cross_cov_mats
+    T, d, d = ccms.shape
+    A = dict()
+    Ab = dict()
+
+    if use_torch:
+        D = list()
+        v = list()
+        vb = list()
+        v.append(ccms[0])
+        vb.append(ccms[0])
+        D = ccms[1]
+        for ii in range(1, T):
+            if ii > 1:
+                As = torch.stack([A[ii - 2, ii - jj - 1] for jj in range(1, ii)])
+                D = ccms[ii] - torch.matmul(As, ccms[1:ii]).sum(dim=0)
+            A[(ii - 1, ii - 1)] = torch.solve(D.t(), vb[ii - 1].t())[0].t()
+            Ab[(ii - 1, ii - 1)] = torch.solve(D, v[ii - 1].t())[0].t()
+
+            for kk in range(1, ii):
+                A[(ii - 1, kk - 1)] = (A[(ii - 2, kk - 1)]
+                                       - A[(ii - 1, ii - 1)].mm(Ab[(ii - 2, ii - kk - 1)]))
+                Ab[(ii - 1, kk - 1)] = (Ab[(ii - 2, kk - 1)]
+                                        - Ab[(ii - 1, ii - 1)].mm(A[(ii - 2, ii - kk - 1)]))
+
+            As = torch.stack([A[(ii - 1, jj - 1)] for jj in range(1, ii + 1)])
+            if ii == 1:
+                cs = ccms[[1]]
+            else:
+                cs = ccms[1: ii + 1]
+            v.append(ccms[0] - torch.matmul(As, torch.transpose(cs, 1, 2)).sum(dim=0))
+            Abs = torch.stack([Ab[(ii - 1, jj - 1)] for jj in range(1, ii + 1)])
+            if ii == 1:
+                cs = ccms[[1]]
+            else:
+                cs = ccms[1: ii + 1]
+            vb.append(ccms[0] - torch.matmul(Abs, cs).sum(dim=0))
+        logdets = [torch.slogdet(vb[ii])[1] for ii in range(T)]
+        return sum(logdets[:T // 2]) - .5 * sum(logdets)
+    else:
+        D = np.zeros((T - 1, d, d))
+        v = np.zeros((T, d, d))
+        vb = np.zeros((T, d, d))
+        v[0] = ccms[0]
+        vb[0] = ccms[0]
+        D[0] = ccms[1]
+        for ii in range(1, T):
+            if ii > 1:
+                D[ii - 1] = ccms[ii] - sum([A[ii - 2, ii - jj - 1].dot(ccms[jj])
+                                            for jj in range(1, ii)])
+            A[(ii - 1, ii - 1)] = np.linalg.solve(vb[ii - 1].T, D[ii - 1].T).T
+            Ab[(ii - 1, ii - 1)] = np.linalg.solve(v[ii - 1].T, D[ii - 1]).T
+            for kk in range(1, ii):
+                A[(ii - 1, kk - 1)] = (A[(ii - 2, kk - 1)]
+                                       - A[(ii - 1, ii - 1)].dot(Ab[(ii - 2, ii - kk - 1)]))
+                Ab[(ii - 1, kk - 1)] = (Ab[(ii - 2, kk - 1)]
+                                        - Ab[(ii - 1, ii - 1)].dot(A[(ii - 2, ii - kk - 1)]))
+            v[ii] = ccms[0] - sum([A[(ii - 1, jj - 1)].dot(ccms[jj].T) for jj in range(1, ii + 1)])
+            vb[ii] = ccms[0] - sum([Ab[(ii - 1, jj - 1)].dot(ccms[jj]) for jj in range(1, ii + 1)])
+        logdets = [np.linalg.slogdet(vb[ii])[1] for ii in range(T)]
+        return sum(logdets[:T // 2]) - .5 * sum(logdets)
+
+
 """
 ====================================================================================================
 ====================================================================================================

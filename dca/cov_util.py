@@ -236,7 +236,7 @@ def calc_pi_from_data(X, T):
     Returns
     -------
     PI : float
-        Mutual information in bits.
+        Mutual information in nats.
     """
     ccms = calc_cross_cov_mats_from_data(X, T)
 
@@ -254,7 +254,7 @@ def calc_pi_from_cov(cov_2_T_pi):
     Returns
     -------
     PI : float
-        Mutual information in bits.
+        Mutual information in nats.
     """
 
     T_pi = cov_2_T_pi.shape[0] // 2
@@ -289,7 +289,7 @@ def project_cross_cov_mats(cross_cov_mats, proj):
     Returns
     -------
     cross_cov_mats_proj : ndarray, shape (T, d, d)
-        Mutual information in bits.
+        Mutual information in nats.
     """
     if isinstance(cross_cov_mats, torch.Tensor):
         use_torch = True
@@ -336,7 +336,7 @@ def calc_pi_from_cross_cov_mats(cross_cov_mats, proj=None):
     Returns
     -------
     PI : float
-        Mutual information in bits.
+        Mutual information in nats.
     """
     if proj is not None:
         cross_cov_mats_proj = project_cross_cov_mats(cross_cov_mats, proj)
@@ -350,6 +350,26 @@ def calc_pi_from_cross_cov_mats(cross_cov_mats, proj=None):
 
 
 def calc_pi_from_cross_cov_mats_block_toeplitz(cross_cov_mats, proj=None):
+    """Calculates predictive information for a spatiotemporal Gaussian
+    process with T-1 N-by-N cross-covariance matrices using the block-Toeplitz
+    algorithm.
+
+    Parameters
+    ----------
+    cross_cov_mats : np.ndarray, shape (T, N, N)
+        Cross-covariance matrices: cross_cov_mats[dt] is the
+        cross-covariance between X(t) and X(t+dt), where each
+        of X(t) and X(t+dt) is a N-dimensional vector.
+    proj: np.ndarray, shape (N, d), optional
+        If provided, the N-dimensional data are projected onto a d-dimensional
+        basis given by the columns of proj. Then, the mutual information is
+        computed for this d-dimensional timeseries.
+
+    Returns
+    -------
+    PI : float
+        Mutual information in nats.
+    """
     use_torch = isinstance(cross_cov_mats, torch.Tensor)
     if proj is not None:
         ccms = project_cross_cov_mats(cross_cov_mats, proj)
@@ -360,18 +380,15 @@ def calc_pi_from_cross_cov_mats_block_toeplitz(cross_cov_mats, proj=None):
     Ab = dict()
 
     if use_torch:
-        D = list()
-        v = list()
-        vb = list()
-        v.append(ccms[0])
-        vb.append(ccms[0])
+        v = ccms[0]
+        vb = [ccms[0]]
         D = ccms[1]
         for ii in range(1, T):
             if ii > 1:
                 As = torch.stack([A[ii - 2, ii - jj - 1] for jj in range(1, ii)])
                 D = ccms[ii] - torch.matmul(As, ccms[1:ii]).sum(dim=0)
             A[(ii - 1, ii - 1)] = torch.solve(D.t(), vb[ii - 1].t())[0].t()
-            Ab[(ii - 1, ii - 1)] = torch.solve(D, v[ii - 1].t())[0].t()
+            Ab[(ii - 1, ii - 1)] = torch.solve(D, v.t())[0].t()
 
             for kk in range(1, ii):
                 A[(ii - 1, kk - 1)] = (A[(ii - 2, kk - 1)]
@@ -379,12 +396,13 @@ def calc_pi_from_cross_cov_mats_block_toeplitz(cross_cov_mats, proj=None):
                 Ab[(ii - 1, kk - 1)] = (Ab[(ii - 2, kk - 1)]
                                         - Ab[(ii - 1, ii - 1)].mm(A[(ii - 2, ii - kk - 1)]))
 
-            As = torch.stack([A[(ii - 1, jj - 1)] for jj in range(1, ii + 1)])
-            if ii == 1:
-                cs = ccms[[1]]
-            else:
-                cs = ccms[1: ii + 1]
-            v.append(ccms[0] - torch.matmul(As, torch.transpose(cs, 1, 2)).sum(dim=0))
+            if ii < T-1:
+                As = torch.stack([A[(ii - 1, jj - 1)] for jj in range(1, ii + 1)])
+                if ii == 1:
+                    cs = ccms[[1]]
+                else:
+                    cs = ccms[1: ii + 1]
+                v = ccms[0] - torch.matmul(As, torch.transpose(cs, 1, 2)).sum(dim=0)
             Abs = torch.stack([Ab[(ii - 1, jj - 1)] for jj in range(1, ii + 1)])
             if ii == 1:
                 cs = ccms[[1]]
@@ -392,29 +410,29 @@ def calc_pi_from_cross_cov_mats_block_toeplitz(cross_cov_mats, proj=None):
                 cs = ccms[1: ii + 1]
             vb.append(ccms[0] - torch.matmul(Abs, cs).sum(dim=0))
         logdets = [torch.slogdet(vb[ii])[1] for ii in range(T)]
-        return sum(logdets[:T // 2]) - .5 * sum(logdets)
+        return sum(logdets[:T // 2]) - 0.5 * sum(logdets)
     else:
-        D = np.zeros((T - 1, d, d))
-        v = np.zeros((T, d, d))
         vb = np.zeros((T, d, d))
-        v[0] = ccms[0]
+        v = ccms[0]
         vb[0] = ccms[0]
-        D[0] = ccms[1]
+        D = ccms[1]
         for ii in range(1, T):
             if ii > 1:
-                D[ii - 1] = ccms[ii] - sum([A[ii - 2, ii - jj - 1].dot(ccms[jj])
-                                            for jj in range(1, ii)])
-            A[(ii - 1, ii - 1)] = np.linalg.solve(vb[ii - 1].T, D[ii - 1].T).T
-            Ab[(ii - 1, ii - 1)] = np.linalg.solve(v[ii - 1].T, D[ii - 1]).T
+                D = ccms[ii] - sum([A[ii - 2, ii - jj - 1].dot(ccms[jj])
+                                    for jj in range(1, ii)])
+            A[(ii - 1, ii - 1)] = np.linalg.solve(vb[ii - 1].T, D.T).T
+            Ab[(ii - 1, ii - 1)] = np.linalg.solve(v.T, D).T
             for kk in range(1, ii):
-                A[(ii - 1, kk - 1)] = (A[(ii - 2, kk - 1)]
-                                       - A[(ii - 1, ii - 1)].dot(Ab[(ii - 2, ii - kk - 1)]))
+                if ii < T-1:
+                    A[(ii - 1, kk - 1)] = (A[(ii - 2, kk - 1)]
+                                           - A[(ii - 1, ii - 1)].dot(Ab[(ii - 2, ii - kk - 1)]))
                 Ab[(ii - 1, kk - 1)] = (Ab[(ii - 2, kk - 1)]
                                         - Ab[(ii - 1, ii - 1)].dot(A[(ii - 2, ii - kk - 1)]))
-            v[ii] = ccms[0] - sum([A[(ii - 1, jj - 1)].dot(ccms[jj].T) for jj in range(1, ii + 1)])
+            if ii < T-1:
+                v = ccms[0] - sum([A[(ii - 1, jj - 1)].dot(ccms[jj].T) for jj in range(1, ii + 1)])
             vb[ii] = ccms[0] - sum([Ab[(ii - 1, jj - 1)].dot(ccms[jj]) for jj in range(1, ii + 1)])
         logdets = [np.linalg.slogdet(vb[ii])[1] for ii in range(T)]
-        return sum(logdets[:T // 2]) - .5 * sum(logdets)
+        return sum(logdets[:T // 2]) - 0.5 * sum(logdets)
 
 
 """

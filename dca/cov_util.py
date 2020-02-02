@@ -396,7 +396,7 @@ def calc_pi_from_cross_cov_mats_block_toeplitz(cross_cov_mats, proj=None):
                 Ab[(ii - 1, kk - 1)] = (Ab[(ii - 2, kk - 1)]
                                         - Ab[(ii - 1, ii - 1)].mm(A[(ii - 2, ii - kk - 1)]))
 
-            if ii < T-1:
+            if ii < T - 1:
                 As = torch.stack([A[(ii - 1, jj - 1)] for jj in range(1, ii + 1)])
                 if ii == 1:
                     cs = ccms[[1]]
@@ -423,12 +423,12 @@ def calc_pi_from_cross_cov_mats_block_toeplitz(cross_cov_mats, proj=None):
             A[(ii - 1, ii - 1)] = np.linalg.solve(vb[ii - 1].T, D.T).T
             Ab[(ii - 1, ii - 1)] = np.linalg.solve(v.T, D).T
             for kk in range(1, ii):
-                if ii < T-1:
+                if ii < T - 1:
                     A[(ii - 1, kk - 1)] = (A[(ii - 2, kk - 1)]
                                            - A[(ii - 1, ii - 1)].dot(Ab[(ii - 2, ii - kk - 1)]))
                 Ab[(ii - 1, kk - 1)] = (Ab[(ii - 2, kk - 1)]
                                         - Ab[(ii - 1, ii - 1)].dot(A[(ii - 2, ii - kk - 1)]))
-            if ii < T-1:
+            if ii < T - 1:
                 v = ccms[0] - sum([A[(ii - 1, jj - 1)].dot(ccms[jj].T) for jj in range(1, ii + 1)])
             vb[ii] = ccms[0] - sum([Ab[(ii - 1, jj - 1)].dot(ccms[jj]) for jj in range(1, ii + 1)])
         logdets = [np.linalg.slogdet(vb[ii])[1] for ii in range(T)]

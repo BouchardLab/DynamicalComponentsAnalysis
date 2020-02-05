@@ -353,7 +353,7 @@ def calc_pi_from_cross_cov_mats_block_toeplitz(cross_cov_mats, proj=None):
     """Calculates predictive information for a spatiotemporal Gaussian
     process with T-1 N-by-N cross-covariance matrices using the block-Toeplitz
     algorithm.
-    
+
     Based on:
     Sowell, Fallaw. "A decomposition of block toeplitz matrices with applications
     to vector time series." 1989a). Unpublished manuscript (1989).

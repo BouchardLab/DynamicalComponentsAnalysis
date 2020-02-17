@@ -69,12 +69,12 @@ def build_loss(cross_cov_mats, d, ortho_lambda=1., block_toeplitz=False):
         def loss(V_flat):
             V = V_flat.reshape(N, d)
             reg_val = ortho_reg_fn(V, ortho_lambda)
-            return -calc_pi_from_cross_cov_mats(cross_cov_mats, V) + reg_val
+            return -calc_pi_from_cross_cov_mats_block_toeplitz(cross_cov_mats, V) + reg_val
     else:
         def loss(V_flat):
             V = V_flat.reshape(N, d)
             reg_val = ortho_reg_fn(V, ortho_lambda)
-            return -calc_pi_from_cross_cov_mats_block_toeplitz(cross_cov_mats, V) + reg_val
+            return -calc_pi_from_cross_cov_mats(cross_cov_mats, V) + reg_val
 
     return loss
 

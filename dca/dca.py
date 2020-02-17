@@ -41,7 +41,7 @@ def ortho_reg_fn(V, ortho_lambda):
     return reg_val
 
 
-def build_loss(cross_cov_mats, d, ortho_lambda=1., block_toeplitz=True):
+def build_loss(cross_cov_mats, d, ortho_lambda=1., block_toeplitz=False):
     """Constructs a loss function which gives the (negative) predictive
     information in the projection of multidimensional timeseries data X onto a
     d-dimensional basis, where predictive information is computed using a
@@ -114,7 +114,7 @@ class DynamicalComponentsAnalysis(object):
         What dtype to use for computation.
     """
     def __init__(self, d=None, T=None, init="random_ortho", n_init=1, tol=1e-6,
-                 ortho_lambda=10., verbose=False, use_scipy=True, block_toeplitz=True,
+                 ortho_lambda=10., verbose=False, use_scipy=True, block_toeplitz=None,
                  device="cpu", dtype=torch.float64):
         self.d = d
         self.T = T
@@ -126,7 +126,16 @@ class DynamicalComponentsAnalysis(object):
         self.device = device
         self.dtype = dtype
         self.use_scipy = use_scipy
-        self.block_toeplitz = block_toeplitz
+        if block_toeplitz is None:
+            try:
+                if d > 40 and T > 8:
+                    self.block_toeplitz = True
+                else:
+                    self.block_toeplitz = False
+            except TypeError:
+                self.block_toeplitz = False
+        else:
+            self.block_toeplitz = block_toeplitz
         self.cross_covs = None
 
     def estimate_cross_covariance(self, X, T=None, regularization=None, reg_ops=None):

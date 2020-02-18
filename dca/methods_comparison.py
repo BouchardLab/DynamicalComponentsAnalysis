@@ -640,7 +640,7 @@ class JPCA(object):
     def __init__(self, n_components=6, mean_subtract=True):
         if n_components//2 != n_components/2:
             raise ValueError("n_components must be even int")
-        self.n_components = n_components
+        self.n_components_ = n_components
         self.mean_subtract = mean_subtract
         self.eigen_vecs_ = None
         self.eigen_vals_ = None
@@ -661,7 +661,7 @@ class JPCA(object):
             Dimensionally reduced and preprocessed X. X_red is returned
             as self.transform requires the data matrix in this form.
         """
-        if n_components > X.shape[1]:
+        if self.n_components_ > X.shape[1]:
             raise ValueError("n_components is greater than number of features in X.")
 
         if self.mean_subtract:
@@ -671,15 +671,15 @@ class JPCA(object):
         if len(X.shape) == 3:
             X = np.vstack(X)
 
-        self.pca_ = PCA(n_components=n_components)
-        self.pca.fit(X)
+        self.pca_ = PCA(n_components=self.n_components_)
+        self.pca_.fit(X)
 
-        X_red = self.pca.transform(X)
+        X_red = self.pca_.transform(X)
         X_prestate = X_red[:-1,]
         dX = np.diff(X_red, axis=0)
 
         M_skew = self._fit_skew(X_prestate, dX)
-        self.eigen_vecs_, self.eigen_vals_ = self._get_jpcs(M_skew)
+        self.eigen_vals_, self.eigen_vecs_ = self._get_jpcs(M_skew)
 
         return X_red
 
@@ -703,16 +703,16 @@ class JPCA(object):
 
         """
         proj_vectors = []
-        for i in range(len(sorted_evecs)//2):
-            v1 = sorted_evecs[i]
-            v2 = sorted_evecs[i + 1]
+        for i in range(len(self.eigen_vecs_)//2):
+            v1 = self.eigen_vecs_[i]
+            v2 = self.eigen_vecs_[i + 1]
             real_v1 = v1 + v2
             real_v2 = (v1 - v2)*1j
             # remove 0j
-            proj_vectors.append(np.real(v1))
-            proj_vectors.append(np.real(v2))
-
-        return X_red@np.array(proj_vectors).T
+            proj_vectors.append(np.real(real_v1))
+            proj_vectors.append(np.real(real_v2))
+        X_proj =  X_red@np.array(proj_vectors).T
+        return X_proj
 
 
     def fit_transform(self, X):
@@ -732,7 +732,7 @@ class JPCA(object):
         return self.transform(X_red)
 
 
-    def _mean_subtract(X):
+    def _mean_subtract(self, X):
         """ For each condition in X, subtract the cross-condition mean from
         each condition.
 
@@ -749,7 +749,7 @@ class JPCA(object):
 
         if len(X.shape) == 3:
             X_norm = []
-            for condition in conditions:
+            for condition in X:
                 X_norm.append(condition - mean)
             X_norm = np.array(X_norm)
             return X_norm
@@ -757,7 +757,7 @@ class JPCA(object):
             return X - mean
 
 
-    def _fit_skew(X_prestate, dX):
+    def _fit_skew(self, X_prestate, dX):
         """
         Assume the differential equation dX = M * X_prestate. This function will return
         M_skew, the skew symmetric component of M, that best fits the data. dX and
@@ -780,14 +780,14 @@ class JPCA(object):
 
         """
         # guaranteed to be square
-        M0, _, _, _ = np.linalg.lstsq(X_prestate, dX)
+        M0, _, _, _ = np.linalg.lstsq(X_prestate, dX, rcond=None)
         M0_skew = .5*(M0 - M0.T)
         m_skew = self._mat2vec(M0_skew)
         opt = self._optimize_skew(m_skew, X_prestate, dX)
         return self._vec2mat(opt.x)
 
 
-    def _optimize_skew(m_skew, X_prestate, dX):
+    def _optimize_skew(self, m_skew, X_prestate, dX):
         """
         Solves for M_skew using gradient optimization methods.
         The objective function and derivative equations have closed forms.
@@ -809,21 +809,20 @@ class JPCA(object):
         opt : scipy.OptimizeResult object
             SciPy optimization result.
         """
-
         def objective(x, X_prestate, dX):
-            f = np.linalg.norm(dX - X_prestate@vec2mat(x))
+            f = np.linalg.norm(dX - X_prestate@self._vec2mat(x))
             return f**2
 
         def derivative(x, X_prestate, dX):
-            D = dX - X_prestate@vec2mat(x)
+            D = dX - X_prestate@self._vec2mat(x)
             D = D.T @ X_prestate
-            return 2*mat2vec(D - D.T)
+            return 2*self._mat2vec(D - D.T)
 
         return minimize(objective, m_skew, jac=derivative,
                                            args=(X_prestate, dX))
 
 
-    def _get_jpcs(M_skew):
+    def _get_jpcs(self, M_skew):
         """
         Given optimal M_skew matrix, return the jPCs, the eigenvectors of M_skew.
 
@@ -844,14 +843,14 @@ class JPCA(object):
         evals, evecs = np.linalg.eig(M_skew)
         evecs = evecs.T
         # get rid of small real number
-        eval_j = np.imag(evals)
+        evals_j = np.imag(evals)
 
         # sort in descending order
-        sort_indices = np.argsort(-np.absolute(eval_j))
+        sort_indices = np.argsort(-np.absolute(evals_j))
         return evals_j[sort_indices], evecs[sort_indices]
 
 
-    def _mat2vec(mat):
+    def _mat2vec(self, mat):
         """
         Convert 2D array into flattened array in column major order.
 
@@ -866,13 +865,13 @@ class JPCA(object):
         return mat.flatten('F')
 
 
-    def _vec2mat(vec):
+    def _vec2mat(self, vec):
         """
         Convert flattened vector into 2D matrix in column major order.
 
         Parameters
         ----------
-        
+
         """
-        shape = (int(sqrt(vec.size)), -1)
+        shape = (int(vec.size**(.5)), -1)
         return np.reshape(vec, shape, 'F')

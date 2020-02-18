@@ -53,19 +53,20 @@ def test_JPCA():
     k = 6
     jpca = JPCA(k)
     X_proj = jpca.fit_transform(X)
-    assert X_proj.shape[0] == k
+    assert X_proj.shape[1] == k
 
 
 def test_JPCA_multiple_conditions():
     """ Test that a JPCA model can be fit on an array with
     multiple conditions."""
     X = []
+    k = 6
     # 10 conditions
     for i in range(10):
         X.append(np.random.rand(60, 100))
-    jpca = JPCA(6)
+    jpca = JPCA(k)
     X_proj = jpca.fit_transform(np.array(X))
-    assert X_proj.shape[0] == k
+    assert X_proj.shape[1] == k
 
 
 def test_JPCA_skew_symmetric():

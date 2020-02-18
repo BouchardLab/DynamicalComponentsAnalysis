@@ -871,7 +871,12 @@ class JPCA(object):
 
         Parameters
         ----------
+        vec : 1D ndarray (num_rows*num_cols, 1)
+            Flattened array to be reshaped into 2D square ndarray.
 
+        Returns
+        -------
+            2D ndarray (num_rows, num_cols)
         """
         shape = (int(vec.size**(.5)), -1)
         return np.reshape(vec, shape, 'F')

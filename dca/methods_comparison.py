@@ -853,7 +853,15 @@ class JPCA(object):
 
     def _mat2vec(mat):
         """
-        Convert 2d matrix into flattened vector in column major order.
+        Convert 2D array into flattened array in column major order.
+
+        Parameters
+        ----------
+        mat : ndarray (num_rows, num_cols)
+            2D matrix to be flattened.
+
+        Returns:
+            1D ndarray of size (num_rows*num_cols)
         """
         return mat.flatten('F')
 
@@ -861,6 +869,10 @@ class JPCA(object):
     def _vec2mat(vec):
         """
         Convert flattened vector into 2D matrix in column major order.
+
+        Parameters
+        ----------
+        
         """
         shape = (int(sqrt(vec.size)), -1)
         return np.reshape(vec, shape, 'F')

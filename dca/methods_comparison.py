@@ -701,7 +701,7 @@ class JPCA(object):
 
         """
         proj_vectors = []
-        for i in range(len(self.eigen_vecs_) / 2):
+        for i in range(len(self.eigen_vecs_) // 2):
             v1 = self.eigen_vecs_[i]
             v2 = self.eigen_vecs_[i + 1]
             real_v1 = v1 + v2
@@ -709,7 +709,7 @@ class JPCA(object):
             # remove 0j
             proj_vectors.append(np.real(real_v1))
             proj_vectors.append(np.real(real_v2))
-        X_proj = X_red@np.array(proj_vectors).T
+        X_proj = X_red @ np.array(proj_vectors).T
         return X_proj
 
     def fit_transform(self, X):
@@ -808,7 +808,7 @@ class JPCA(object):
             return f**2
 
         def derivative(x, X_prestate, dX):
-            D = dX - X_prestate@self._vec2mat(x)
+            D = dX - X_prestate @ self._vec2mat(x)
             D = D.T @ X_prestate
             return 2 * self._mat2vec(D - D.T)
 

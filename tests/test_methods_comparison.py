@@ -46,6 +46,7 @@ def test_SFA(noise_dataset):
     model.transform(X)
     model.fit_transform(X)
 
+
 def test_JPCA():
     """ Test that a JPCA model can be fit with no errors.
     """

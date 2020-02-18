@@ -638,14 +638,13 @@ class JPCA(object):
         PCA object used to transform X to X_red.
     """
     def __init__(self, n_components=6, mean_subtract=True):
-        if n_components//2 != n_components/2:
+        if n_components // 2 != n_components / 2:
             raise ValueError("n_components must be even int")
         self.n_components_ = n_components
         self.mean_subtract = mean_subtract
         self.eigen_vecs_ = None
         self.eigen_vals_ = None
         self.pca_ = None
-
 
     def fit(self, X):
         """ Fit a jPCA model to X.
@@ -675,14 +674,13 @@ class JPCA(object):
         self.pca_.fit(X)
 
         X_red = self.pca_.transform(X)
-        X_prestate = X_red[:-1,]
+        X_prestate = X_red[:-1, ]
         dX = np.diff(X_red, axis=0)
 
         M_skew = self._fit_skew(X_prestate, dX)
         self.eigen_vals_, self.eigen_vecs_ = self._get_jpcs(M_skew)
 
         return X_red
-
 
     def transform(self, X_red):
         """ Transform X using top two JPCA components.
@@ -703,17 +701,16 @@ class JPCA(object):
 
         """
         proj_vectors = []
-        for i in range(len(self.eigen_vecs_)//2):
+        for i in range(len(self.eigen_vecs_) / 2):
             v1 = self.eigen_vecs_[i]
             v2 = self.eigen_vecs_[i + 1]
             real_v1 = v1 + v2
-            real_v2 = (v1 - v2)*1j
+            real_v2 = (v1 - v2) * 1j
             # remove 0j
             proj_vectors.append(np.real(real_v1))
             proj_vectors.append(np.real(real_v2))
-        X_proj =  X_red@np.array(proj_vectors).T
+        X_proj = X_red@np.array(proj_vectors).T
         return X_proj
-
 
     def fit_transform(self, X):
         """ Fit and transform X using JPCA.
@@ -730,7 +727,6 @@ class JPCA(object):
         """
         X_red = self.fit(X)
         return self.transform(X_red)
-
 
     def _mean_subtract(self, X):
         """ For each condition in X, subtract the cross-condition mean from
@@ -756,7 +752,6 @@ class JPCA(object):
         else:
             return X - mean
 
-
     def _fit_skew(self, X_prestate, dX):
         """
         Assume the differential equation dX = M * X_prestate. This function will return
@@ -781,11 +776,10 @@ class JPCA(object):
         """
         # guaranteed to be square
         M0, _, _, _ = np.linalg.lstsq(X_prestate, dX, rcond=None)
-        M0_skew = .5*(M0 - M0.T)
+        M0_skew = .5 * (M0 - M0.T)
         m_skew = self._mat2vec(M0_skew)
         opt = self._optimize_skew(m_skew, X_prestate, dX)
         return self._vec2mat(opt.x)
-
 
     def _optimize_skew(self, m_skew, X_prestate, dX):
         """
@@ -816,11 +810,9 @@ class JPCA(object):
         def derivative(x, X_prestate, dX):
             D = dX - X_prestate@self._vec2mat(x)
             D = D.T @ X_prestate
-            return 2*self._mat2vec(D - D.T)
+            return 2 * self._mat2vec(D - D.T)
 
-        return minimize(objective, m_skew, jac=derivative,
-                                           args=(X_prestate, dX))
-
+        return minimize(objective, m_skew, jac=derivative, args=(X_prestate, dX))
 
     def _get_jpcs(self, M_skew):
         """
@@ -849,7 +841,6 @@ class JPCA(object):
         sort_indices = np.argsort(-np.absolute(evals_j))
         return evals_j[sort_indices], evecs[sort_indices]
 
-
     def _mat2vec(self, mat):
         """
         Convert 2D array into flattened array in column major order.
@@ -863,7 +854,6 @@ class JPCA(object):
             1D ndarray of size (num_rows*num_cols)
         """
         return mat.flatten('F')
-
 
     def _vec2mat(self, vec):
         """

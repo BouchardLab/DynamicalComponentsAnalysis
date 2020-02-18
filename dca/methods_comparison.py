@@ -683,7 +683,7 @@ class JPCA(object):
         return X_red
 
     def transform(self, X_red):
-        """ Transform X using top two JPCA components.
+        """ Transform X using JPCA components.
 
         Parameters
         ----------
@@ -696,8 +696,9 @@ class JPCA(object):
             X_red projected onto jPCA components. In X_proj, every pair
             of features correspond to a conjugate pair of JPCA eigenvectors.
             The pairs are sorted by largest magnitude eigenvalue
-            (i.e. dimensions 0 and 1 in X_proj contains the conjugate pair
-            with the largest eigenvalue).
+            (i.e. dimensions 0 and 1 in X_proj contains the projection from
+            the conjugate eigenvector pair with the largest eigenvalue magnitude).
+            The projection pair is what captures the rotations.
 
         """
         proj_vectors = []
@@ -816,7 +817,8 @@ class JPCA(object):
 
     def _get_jpcs(self, M_skew):
         """
-        Given optimal M_skew matrix, return the jPCs, the eigenvectors of M_skew.
+        Given optimal M_skew matrix, return the eigenvalues and eigenvectors
+        of M_skew. The eigenvectors/values are sorted by eigenvalue magnitude.
 
         Parameters
         ----------

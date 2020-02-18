@@ -610,3 +610,257 @@ class SlowFeatureAnalysis(object):
             n_components = self.n_components
         self.fit(X)
         return self.transform(X, n_components=n_components)
+
+
+class JPCA(object):
+    """ jPCA.
+
+    Parameters
+    ----------
+    n_components : even int (default=6)
+        Number of components to reduce X to.
+
+    mean_subtract: boolean (default=True)
+        Whether to subtract the cross-condition mean from each condition
+        before running jPCA.
+
+    Attributes
+    ----------
+    eigen_vecs_ : list
+        List of numpy eigenvectors from JPCA skew symmetric matrix sorted in
+        descending order by magnitude of eigenvalue.
+
+    eigen_vals_ : list
+        List of eigenvalues from JPCA skew symmetric matrix. The index
+        of each eigenvalue corresponds with the eigenvector in eigen_vecs_.
+
+    pca_ : sklearn.decomp.PCA object
+        PCA object used to transform X to X_red.
+    """
+    def __init__(self, n_components=6, mean_subtract=True):
+        if n_components//2 != n_components/2:
+            raise ValueError("n_components must be even int")
+        self.n_components = n_components
+        self.mean_subtract = mean_subtract
+        self.eigen_vecs_ = None
+        self.eigen_vals_ = None
+        self.pca_ = None
+
+
+    def fit(self, X):
+        """ Fit a jPCA model to X.
+
+        Parameters
+        ----------
+        X : ndarray (time, features) or (conditions, time, features)
+            Data to fit using jPCA model.
+
+        Returns
+        -------
+        X_red : ndarray (time*conditions, n_components)
+            Dimensionally reduced and preprocessed X. X_red is returned
+            as self.transform requires the data matrix in this form.
+        """
+        if n_components > X.shape[1]:
+            raise ValueError("n_components is greater than number of features in X.")
+
+        if self.mean_subtract:
+            X = self._mean_subtract(X)
+
+        # stack conditions if more than 1:
+        if len(X.shape) == 3:
+            X = np.vstack(X)
+
+        self.pca_ = PCA(n_components=n_components)
+        self.pca.fit(X)
+
+        X_red = self.pca.transform(X)
+        X_prestate = X_red[:-1,]
+        dX = np.diff(X_red, axis=0)
+
+        M_skew = self._fit_skew(X_prestate, dX)
+        self.eigen_vecs_, self.eigen_vals_ = self._get_jpcs(M_skew)
+
+        return X_red
+
+
+    def transform(self, X_red):
+        """ Transform X using top two JPCA components.
+
+        Parameters
+        ----------
+        X_red : ndarray (time*conditions, n_components)
+            Dimensionally reduced and preprocessed X.
+
+        Returns
+        -------
+        ndarray (time*conditions, n_components)
+            X_red projected onto jPCA components. In X_proj, every pair
+            of features correspond to a conjugate pair of JPCA eigenvectors.
+            The pairs are sorted by largest magnitude eigenvalue
+            (i.e. dimensions 0 and 1 in X_proj contains the conjugate pair
+            with the largest eigenvalue).
+
+        """
+        proj_vectors = []
+        for i in range(len(sorted_evecs)//2):
+            v1 = sorted_evecs[i]
+            v2 = sorted_evecs[i + 1]
+            real_v1 = v1 + v2
+            real_v2 = (v1 - v2)*1j
+            # remove 0j
+            proj_vectors.append(np.real(v1))
+            proj_vectors.append(np.real(v2))
+
+        return X_red@np.array(proj_vectors).T
+
+
+    def fit_transform(self, X):
+        """ Fit and transform X using JPCA.
+
+        Parameters
+        ----------
+        X : ndarray (time, features) or (conditions, time, features)
+            Data to be transformed by JPCA.
+
+        Returns
+        -------
+        ndarray (conditions*time, n_components)
+            X projected onto JPCA components.
+        """
+        X_red = self.fit(X)
+        return self.transform(X_red)
+
+
+    def _mean_subtract(X):
+        """ For each condition in X, subtract the cross-condition mean from
+        each condition.
+
+        Parameters
+        ----------
+        X : ndarray (time, features) or (conditions, time, features)
+
+        Returns
+        -------
+        X_norm : ndarray (time, features) or (conditions, time, features)
+            mean-subtracted X
+        """
+        mean = np.mean(X, axis=0)
+
+        if len(X.shape) == 3:
+            X_norm = []
+            for condition in conditions:
+                X_norm.append(condition - mean)
+            X_norm = np.array(X_norm)
+            return X_norm
+        else:
+            return X - mean
+
+
+    def _fit_skew(X_prestate, dX):
+        """
+        Assume the differential equation dX = M * X_prestate. This function will return
+        M_skew, the skew symmetric component of M, that best fits the data. dX and
+        X_prestate should be the same shape.
+        Note: M is solved for using least squares.
+
+        Parameters
+        ----------
+        X_prestate : np.array
+            Time series matrix with the last time step removed.
+
+        dX : np.array
+            Discrete derivative matrix of X obtained by subtracting each row with its
+            previous time step. (derivative at time 0 is not included).
+
+        Returns
+        -------
+        M_skew : np.array
+            Optimal skew symmetric matrix that best fits dX and X_prestate.
+
+        """
+        # guaranteed to be square
+        M0, _, _, _ = np.linalg.lstsq(X_prestate, dX)
+        M0_skew = .5*(M0 - M0.T)
+        m_skew = self._mat2vec(M0_skew)
+        opt = self._optimize_skew(m_skew, X_prestate, dX)
+        return self._vec2mat(opt.x)
+
+
+    def _optimize_skew(m_skew, X_prestate, dX):
+        """
+        Solves for M_skew using gradient optimization methods.
+        The objective function and derivative equations have closed forms.
+
+        Parameters
+        ----------
+        m_skew : np.array
+            Flattened array (1d vector) of initial M_skew guess
+
+        X_prestate : np.array
+            Time series matrix with the last time step removed.
+
+        dX : np.array
+            Discrete derivative matrix of X obtained by subtracting each row with its
+            previous time step. (derivative at time 0 is not included).
+
+        Returns
+        -------
+        opt : scipy.OptimizeResult object
+            SciPy optimization result.
+        """
+
+        def objective(x, X_prestate, dX):
+            f = np.linalg.norm(dX - X_prestate@vec2mat(x))
+            return f**2
+
+        def derivative(x, X_prestate, dX):
+            D = dX - X_prestate@vec2mat(x)
+            D = D.T @ X_prestate
+            return 2*mat2vec(D - D.T)
+
+        return minimize(objective, m_skew, jac=derivative,
+                                           args=(X_prestate, dX))
+
+
+    def _get_jpcs(M_skew):
+        """
+        Given optimal M_skew matrix, return the jPCs, the eigenvectors of M_skew.
+
+        Parameters
+        ----------
+        M_skew : np.array
+            optimal M_skew (2D matrix)
+
+        Returns
+        -------
+        evecs : np.array
+            2D Array where each row is a jPC.
+
+        evals : np.array of floats
+            Array where each position contains the correpsonding eigenvalue to the
+            jPC in evecs.
+        """
+        evals, evecs = np.linalg.eig(M_skew)
+        evecs = evecs.T
+        # get rid of small real number
+        eval_j = np.imag(evals)
+
+        # sort in descending order
+        sort_indices = np.argsort(-np.absolute(eval_j))
+        return evals_j[sort_indices], evecs[sort_indices]
+
+
+    def _mat2vec(mat):
+        """
+        Convert 2d matrix into flattened vector in column major order.
+        """
+        return mat.flatten('F')
+
+
+    def _vec2mat(vec):
+        """
+        Convert flattened vector into 2D matrix in column major order.
+        """
+        shape = (int(sqrt(vec.size)), -1)
+        return np.reshape(vec, shape, 'F')

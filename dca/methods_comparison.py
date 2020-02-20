@@ -641,7 +641,7 @@ class JPCA(object):
         if n_components // 2 != n_components / 2:
             raise ValueError("n_components must be even int")
         self.n_components_ = n_components
-        self.mean_subtract = mean_subtract
+        self.mean_subtract_ = mean_subtract
         self.eigen_vecs_ = None
         self.eigen_vals_ = None
         self.pca_ = None
@@ -656,44 +656,42 @@ class JPCA(object):
 
         Returns
         -------
-        X_red : ndarray (time*conditions, n_components)
-            Dimensionally reduced and preprocessed X. X_red is returned
-            as self.transform requires the data matrix in this form.
+        self
         """
         if self.n_components_ > X.shape[1]:
             raise ValueError("n_components is greater than number of features in X.")
 
-        if self.mean_subtract:
+        if self.mean_subtract_:
             X = self._mean_subtract(X)
 
-        # stack conditions if more than 1:
-        if len(X.shape) == 3:
-            X = np.vstack(X)
+        condition_indices = self._get_condition_indices(X)
+
+        X = np.vstack(X)
 
         self.pca_ = PCA(n_components=self.n_components_)
         self.pca_.fit(X)
 
         X_red = self.pca_.transform(X)
-        X_prestate = X_red[:-1, ]
-        dX = np.diff(X_red, axis=0)
+
+        dX, X_prestate = self._get_dX_and_prestate(X_red, condition_indices)
 
         M_skew = self._fit_skew(X_prestate, dX)
         self.eigen_vals_, self.eigen_vecs_ = self._get_jpcs(M_skew)
 
-        return X_red
+        return self
 
-    def transform(self, X_red):
+    def transform(self, X):
         """ Transform X using JPCA components.
 
         Parameters
         ----------
-        X_red : ndarray (time*conditions, n_components)
-            Dimensionally reduced and preprocessed X.
+        X : ndarray (time, features) or (conditions, time, features)
+            Data to fit using jPCA model.
 
         Returns
         -------
         ndarray (time*conditions, n_components)
-            X_red projected onto jPCA components. In X_proj, every pair
+            X projected onto jPCA components. In X_proj, every pair
             of features correspond to a conjugate pair of JPCA eigenvectors.
             The pairs are sorted by largest magnitude eigenvalue
             (i.e. dimensions 0 and 1 in X_proj contains the projection from
@@ -701,6 +699,13 @@ class JPCA(object):
             The projection pair is what captures the rotations.
 
         """
+
+        if self.mean_subtract_:
+            X = self._mean_subtract(X)
+
+        X = np.vstack(X)
+        X_red = self.pca_.transform(X)
+
         proj_vectors = []
         for i in range(len(self.eigen_vecs_) // 2):
             v1 = self.eigen_vecs_[i]
@@ -726,8 +731,35 @@ class JPCA(object):
         ndarray (conditions*time, n_components)
             X projected onto JPCA components.
         """
-        X_red = self.fit(X)
-        return self.transform(X_red)
+        self.fit(X)
+        return self.transform(X)
+
+    def _get_condition_indices(self, X):
+        # track the indices that mark the end index of each condition
+        condition_indices = []
+
+        # stack conditions if more than 1:
+        if len(X.shape) == 3:
+            condition_start = 0
+            for condition in X:
+                condition_start += condition.shape[0]
+                condition_indices.append(condition_start)
+        else:
+            condition_indices.append(X.shape[0])
+        return condition_indices
+
+    def _get_dX_and_prestate(self, stacked_X, condition_indices):
+        X_prestate = []
+        dX = []
+        start = 0
+        for end in condition_indices:
+            X_prestate.append(stacked_X[start : end - 1, :])
+            dX.append(np.diff(stacked_X[start : end, :], axis=0))
+            start = end
+
+        X_prestate = np.array(X_prestate)
+        dX = np.array(dX)
+        return dX, X_prestate
 
     def _mean_subtract(self, X):
         """ For each condition in X, subtract the cross-condition mean from
@@ -742,15 +774,16 @@ class JPCA(object):
         X_norm : ndarray (time, features) or (conditions, time, features)
             mean-subtracted X
         """
-        mean = np.mean(X, axis=0)
 
         if len(X.shape) == 3:
+            mean = np.mean(X, axis=0)
             X_norm = []
             for condition in X:
                 X_norm.append(condition - mean)
             X_norm = np.array(X_norm)
             return X_norm
         else:
+            mean = np.mean(X)
             return X - mean
 
     def _fit_skew(self, X_prestate, dX):

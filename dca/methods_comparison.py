@@ -636,6 +636,10 @@ class JPCA(object):
 
     pca_ : sklearn.decomp.PCA object
         PCA object used to transform X to X_red.
+
+    cross_condition_mean_ : ndarray (time, features)
+        Cross condition mean of X during fit.
+
     """
     def __init__(self, n_components=6, mean_subtract=True):
         if n_components // 2 != n_components / 2:
@@ -645,6 +649,7 @@ class JPCA(object):
         self.eigen_vecs_ = None
         self.eigen_vals_ = None
         self.pca_ = None
+        self.cross_condition_mean_ = None
 
     def fit(self, X):
         """ Fit a jPCA model to X.
@@ -662,7 +667,8 @@ class JPCA(object):
             raise ValueError("n_components is greater than number of features in X.")
 
         if self.mean_subtract_:
-            X = self._mean_subtract(X)
+            self.cross_condition_mean_ = np.mean(X, axis=0)
+            X = self._cross_condition_subtract(X, self.cross_condition_mean_)
 
         condition_indices = self._get_condition_indices(X)
 
@@ -700,7 +706,7 @@ class JPCA(object):
         """
 
         if self.mean_subtract_:
-            X = self._mean_subtract(X)
+            X = self._cross_condition_subtract(X, self.cross_condition_mean_)
 
         X = np.vstack(X)
         X_red = self.pca_.transform(X)
@@ -797,13 +803,19 @@ class JPCA(object):
         dX = np.vstack(dX)
         return dX, X_prestate
 
-    def _mean_subtract(self, X):
-        """ For each condition in X, subtract the cross-condition mean from
-        each condition.
+    def _cross_condition_subtract(self, X, C):
+        """ For each condition in X, subtract C from
+        each condition. If there is only one condition, this function does
+        nothing.
 
         Parameters
         ----------
         X : ndarray (time, features) or (conditions, time, features)
+            Data matrix.
+
+        C : ndarray (time, features)
+            Array to subtract from each condition. Must be same shape as
+            data in each condition.
 
         Returns
         -------
@@ -812,15 +824,13 @@ class JPCA(object):
         """
 
         if len(X.shape) == 3:
-            mean = np.mean(X, axis=0)
             X_norm = []
             for condition in X:
-                X_norm.append(condition - mean)
+                X_norm.append(condition - C)
             X_norm = np.array(X_norm)
             return X_norm
         else:
-            mean = np.mean(X)
-            return X - mean
+            return X
 
     def _fit_skew(self, X_prestate, dX):
         """

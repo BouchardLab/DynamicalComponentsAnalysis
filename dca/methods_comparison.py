@@ -667,7 +667,6 @@ class JPCA(object):
         condition_indices = self._get_condition_indices(X)
 
         X = np.vstack(X)
-
         self.pca_ = PCA(n_components=self.n_components_)
         self.pca_.fit(X)
 
@@ -735,6 +734,20 @@ class JPCA(object):
         return self.transform(X)
 
     def _get_condition_indices(self, X):
+        """ Get the end index of each condition in 'stacked' X. If X
+        is 2D, this simply returns the number of rows in X. If X is 3D,
+        this will return the last row index of each condition + 1 as if all
+        the conditions were stacked vertically.
+
+        Parameters
+        ----------
+        X : ndarray (time, features) or (conditions, time, features)
+            Data array.
+
+        Returns
+        -------
+        List of ints where each int is the last row index + 1 of each condition.
+        """
         # track the indices that mark the end index of each condition
         condition_indices = []
 
@@ -749,16 +762,39 @@ class JPCA(object):
         return condition_indices
 
     def _get_dX_and_prestate(self, stacked_X, condition_indices):
+        """ Given a list of last row 'indeces' (exclusive) for each condition,
+        select the correct indices for X_prestate and dX from the stacked data
+        array. For X_prestate, all rows except for the last one is taken
+        for each condition. For dX, the difference between all adjacent rows
+        in each condition is taken. Note that dX and X_prestate
+        will have the same shape.
+
+        Parameters
+        ----------
+        stacked_X : ndarray (time*conditions, features)
+            Data array after being vstacked.
+
+        condition_indices : list of ints
+            List of row indices extracted by _get_condition_indices.
+
+        Returns
+        -------
+        dX : ndarray
+            Discrete derivative of X.
+
+        X_prestate : ndarray
+            Initial values of X.
+        """
         X_prestate = []
         dX = []
         start = 0
         for end in condition_indices:
-            X_prestate.append(stacked_X[start : end - 1, :])
-            dX.append(np.diff(stacked_X[start : end, :], axis=0))
+            X_prestate.append(stacked_X[start:end - 1, :])
+            dX.append(np.diff(stacked_X[start:end, :], axis=0))
             start = end
 
-        X_prestate = np.array(X_prestate)
-        dX = np.array(dX)
+        X_prestate = np.vstack(X_prestate)
+        dX = np.vstack(dX)
         return dX, X_prestate
 
     def _mean_subtract(self, X):

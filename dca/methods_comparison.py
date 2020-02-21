@@ -656,7 +656,7 @@ class JPCA(object):
 
         Parameters
         ----------
-        X : ndarray (time, features) or (conditions, time, features)
+        X : ndarray (conditions, time, features)
             Data to fit using jPCA model.
 
         Returns
@@ -666,20 +666,22 @@ class JPCA(object):
         if self.n_components_ > X.shape[1]:
             raise ValueError("n_components is greater than number of features in X.")
 
+        if len(X.shape) != 3:
+            raise ValueError("Data must be in 3 dimensions (conditions, time, features).")
+
         if self.mean_subtract_:
             self.cross_condition_mean_ = np.mean(X, axis=0)
             X = self._cross_condition_subtract(X, self.cross_condition_mean_)
 
-        condition_indices = self._get_condition_indices(X)
-
-        X = np.vstack(X)
+        X_flat = np.concatenate(X, axis=0)
         self.pca_ = PCA(n_components=self.n_components_)
-        self.pca_.fit(X)
+        self.pca_.fit(X_flat)
 
-        X_red = self.pca_.transform(X)
-
-        dX, X_prestate = self._get_dX_and_prestate(X_red, condition_indices)
-
+        X_red = [self.pca_.transform(Xi) for Xi in X]
+        dX = np.concatenate([np.diff(Xi, axis=0) for Xi in X_red], axis=0)
+        X_prestate = np.concatenate([Xi[:-1] for Xi in X_red], axis=0)
+        print(dX.shape)
+        print(X_prestate.shape)
         M_skew = self._fit_skew(X_prestate, dX)
         self.eigen_vals_, self.eigen_vecs_ = self._get_jpcs(M_skew)
 
@@ -690,15 +692,15 @@ class JPCA(object):
 
         Parameters
         ----------
-        X : ndarray (time, features) or (conditions, time, features)
+        X : ndarray (conditions, time, features)
             Data to fit using jPCA model.
 
         Returns
         -------
-        ndarray (time*conditions, n_components)
-            X projected onto jPCA components. In X_proj, every pair
-            of features correspond to a conjugate pair of JPCA eigenvectors.
-            The pairs are sorted by largest magnitude eigenvalue
+        ndarray (conditions, time, n_components)
+            X projected onto jPCA components (conditions are preserved).
+            In X_proj, every pair of features correspond to a conjugate pair
+            of JPCA eigenvectors. The pairs are sorted by largest magnitude eigenvalue
             (i.e. dimensions 0 and 1 in X_proj contains the projection from
             the conjugate eigenvector pair with the largest eigenvalue magnitude).
             The projection pair is what captures the rotations.
@@ -706,10 +708,10 @@ class JPCA(object):
         """
 
         if self.mean_subtract_:
+            self.cross_condition_mean_ = np.mean(X, axis=0)
             X = self._cross_condition_subtract(X, self.cross_condition_mean_)
 
-        X = np.vstack(X)
-        X_red = self.pca_.transform(X)
+        X_red = [self.pca_.transform(Xi) for Xi in X]
 
         proj_vectors = []
         for i in range(len(self.eigen_vecs_) // 2):
@@ -720,7 +722,8 @@ class JPCA(object):
             # remove 0j
             proj_vectors.append(np.real(real_v1))
             proj_vectors.append(np.real(real_v2))
-        X_proj = X_red @ np.array(proj_vectors).T
+        X_proj = np.stack([X_redi @ np.array(proj_vectors).T for X_redi in X_red], axis=0)
+        print(X_proj.shape)
         return X_proj
 
     def fit_transform(self, X):
@@ -728,7 +731,7 @@ class JPCA(object):
 
         Parameters
         ----------
-        X : ndarray (time, features) or (conditions, time, features)
+        X : ndarray (conditions, time, features)
             Data to be transformed by JPCA.
 
         Returns

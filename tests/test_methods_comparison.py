@@ -47,27 +47,21 @@ def test_SFA(noise_dataset):
     model.fit_transform(X)
 
 
-def test_JPCA():
-    """ Test that a JPCA model can be fit with no errors.
-    """
-    X = np.random.rand(60, 100)
-    k = 6
-    jpca = JPCA(k)
-    X_proj = jpca.fit_transform(X)
-    assert X_proj.shape[1] == k
-
-
 def test_JPCA_multiple_conditions():
     """ Test that a JPCA model can be fit on an array with
     multiple conditions."""
     X = []
     k = 6
+    num_conds = 10
+    num_time_steps = 60
     # 10 conditions
-    for i in range(10):
-        X.append(np.random.rand(60, 100))
+    for i in range(num_conds):
+        X.append(np.random.rand(num_time_steps, 100))
     jpca = JPCA(k)
     X_proj = jpca.fit_transform(np.array(X))
-    assert X_proj.shape[1] == k
+    assert X_proj.shape[0] == num_conds
+    assert X_proj.shape[1] == num_time_steps
+    assert X_proj.shape[2] == k
 
 
 def test_JPCA_skew_symmetric():

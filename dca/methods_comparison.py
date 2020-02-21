@@ -670,8 +670,8 @@ class JPCA(object):
             raise ValueError("Data must be in 3 dimensions (conditions, time, features).")
 
         if self.mean_subtract_:
-            self.cross_condition_mean_ = np.mean(X, axis=0)
-            X = self._cross_condition_subtract(X, self.cross_condition_mean_)
+            self.cross_condition_mean_ = np.mean(X, axis=0, keepdims=True)
+            X = X - self.cross_condition_mean_
 
         X_flat = np.concatenate(X, axis=0)
         self.pca_ = PCA(n_components=self.n_components_)
@@ -680,8 +680,6 @@ class JPCA(object):
         X_red = [self.pca_.transform(Xi) for Xi in X]
         dX = np.concatenate([np.diff(Xi, axis=0) for Xi in X_red], axis=0)
         X_prestate = np.concatenate([Xi[:-1] for Xi in X_red], axis=0)
-        print(dX.shape)
-        print(X_prestate.shape)
         M_skew = self._fit_skew(X_prestate, dX)
         self.eigen_vals_, self.eigen_vecs_ = self._get_jpcs(M_skew)
 
@@ -708,8 +706,8 @@ class JPCA(object):
         """
 
         if self.mean_subtract_:
-            self.cross_condition_mean_ = np.mean(X, axis=0)
-            X = self._cross_condition_subtract(X, self.cross_condition_mean_)
+            self.cross_condition_mean_ = np.mean(X, axis=0, keepdims=True)
+            X = X - self.cross_condition_mean_
 
         X_red = [self.pca_.transform(Xi) for Xi in X]
 
@@ -723,7 +721,6 @@ class JPCA(object):
             proj_vectors.append(np.real(real_v1))
             proj_vectors.append(np.real(real_v2))
         X_proj = np.stack([X_redi @ np.array(proj_vectors).T for X_redi in X_red], axis=0)
-        print(X_proj.shape)
         return X_proj
 
     def fit_transform(self, X):
@@ -741,99 +738,6 @@ class JPCA(object):
         """
         self.fit(X)
         return self.transform(X)
-
-    def _get_condition_indices(self, X):
-        """ Get the end index of each condition in 'stacked' X. If X
-        is 2D, this simply returns the number of rows in X. If X is 3D,
-        this will return the last row index of each condition + 1 as if all
-        the conditions were stacked vertically.
-
-        Parameters
-        ----------
-        X : ndarray (time, features) or (conditions, time, features)
-            Data array.
-
-        Returns
-        -------
-        List of ints where each int is the last row index + 1 of each condition.
-        """
-        # track the indices that mark the end index of each condition
-        condition_indices = []
-
-        # stack conditions if more than 1:
-        if len(X.shape) == 3:
-            condition_start = 0
-            for condition in X:
-                condition_start += condition.shape[0]
-                condition_indices.append(condition_start)
-        else:
-            condition_indices.append(X.shape[0])
-        return condition_indices
-
-    def _get_dX_and_prestate(self, stacked_X, condition_indices):
-        """ Given a list of last row 'indeces' (exclusive) for each condition,
-        select the correct indices for X_prestate and dX from the stacked data
-        array. For X_prestate, all rows except for the last one is taken
-        for each condition. For dX, the difference between all adjacent rows
-        in each condition is taken. Note that dX and X_prestate
-        will have the same shape.
-
-        Parameters
-        ----------
-        stacked_X : ndarray (time*conditions, features)
-            Data array after being vstacked.
-
-        condition_indices : list of ints
-            List of row indices extracted by _get_condition_indices.
-
-        Returns
-        -------
-        dX : ndarray
-            Discrete derivative of X.
-
-        X_prestate : ndarray
-            Initial values of X.
-        """
-        X_prestate = []
-        dX = []
-        start = 0
-        for end in condition_indices:
-            X_prestate.append(stacked_X[start:end - 1, :])
-            dX.append(np.diff(stacked_X[start:end, :], axis=0))
-            start = end
-
-        X_prestate = np.vstack(X_prestate)
-        dX = np.vstack(dX)
-        return dX, X_prestate
-
-    def _cross_condition_subtract(self, X, C):
-        """ For each condition in X, subtract C from
-        each condition. If there is only one condition, this function does
-        nothing.
-
-        Parameters
-        ----------
-        X : ndarray (time, features) or (conditions, time, features)
-            Data matrix.
-
-        C : ndarray (time, features)
-            Array to subtract from each condition. Must be same shape as
-            data in each condition.
-
-        Returns
-        -------
-        X_norm : ndarray (time, features) or (conditions, time, features)
-            mean-subtracted X
-        """
-
-        if len(X.shape) == 3:
-            X_norm = []
-            for condition in X:
-                X_norm.append(condition - C)
-            X_norm = np.array(X_norm)
-            return X_norm
-        else:
-            return X
 
     def _fit_skew(self, X_prestate, dX):
         """

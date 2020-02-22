@@ -706,7 +706,6 @@ class JPCA(object):
         """
 
         if self.mean_subtract_:
-            self.cross_condition_mean_ = np.mean(X, axis=0, keepdims=True)
             X = X - self.cross_condition_mean_
 
         X_red = [self.pca_.transform(Xi) for Xi in X]

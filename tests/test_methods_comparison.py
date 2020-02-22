@@ -7,7 +7,8 @@ from dca.methods_comparison import (make_block_diag, block_dot_A, block_dot_B,
                                     block_dot_AB, matrix_inversion_identity,
                                     ForecastableComponentsAnalysis as FCA,
                                     GaussianProcessFactorAnalysis as GPFA,
-                                    SlowFeatureAnalysis as SFA)
+                                    SlowFeatureAnalysis as SFA,
+                                    JPCA)
 
 
 @pytest.fixture
@@ -44,6 +45,35 @@ def test_SFA(noise_dataset):
     model.fit(X)
     model.transform(X)
     model.fit_transform(X)
+
+
+def test_JPCA_multiple_conditions():
+    """ Test that a JPCA model can be fit on an array with
+    multiple conditions."""
+    X = []
+    k = 6
+    num_conds = 10
+    num_time_steps = 60
+    # 10 conditions
+    for i in range(num_conds):
+        X.append(np.random.rand(num_time_steps, 100))
+    jpca = JPCA(k)
+    X_proj = jpca.fit_transform(np.array(X))
+    assert X_proj.shape[0] == num_conds
+    assert X_proj.shape[1] == num_time_steps
+    assert X_proj.shape[2] == k
+
+
+def test_JPCA_skew_symmetric():
+    """ Test that matrix fit by JPCA is skew symmetric.
+    """
+    num_rows = 60
+    num_cols = 10
+    dX = np.random.rand(num_rows, num_cols)
+    X_prestate = np.random.rand(num_rows, num_cols)
+    jpca = JPCA(num_cols)
+    M_skew = jpca._fit_skew(X_prestate, dX)
+    assert np.isclose(M_skew.T, -M_skew).all()
 
 
 def test_make_block_diag():

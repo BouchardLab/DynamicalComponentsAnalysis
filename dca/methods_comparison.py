@@ -610,3 +610,250 @@ class SlowFeatureAnalysis(object):
             n_components = self.n_components
         self.fit(X)
         return self.transform(X, n_components=n_components)
+
+
+class JPCA(object):
+    """ jPCA.
+
+    Parameters
+    ----------
+    n_components : even int (default=6)
+        Number of components to reduce X to.
+
+    mean_subtract: boolean (default=True)
+        Whether to subtract the cross-condition mean from each condition
+        before running jPCA.
+
+    Attributes
+    ----------
+    eigen_vecs_ : list
+        List of numpy eigenvectors from JPCA skew symmetric matrix sorted in
+        descending order by magnitude of eigenvalue.
+
+    eigen_vals_ : list
+        List of eigenvalues from JPCA skew symmetric matrix. The index
+        of each eigenvalue corresponds with the eigenvector in eigen_vecs_.
+
+    pca_ : sklearn.decomp.PCA object
+        PCA object used to transform X to X_red.
+
+    cross_condition_mean_ : ndarray (time, features)
+        Cross condition mean of X during fit.
+
+    """
+    def __init__(self, n_components=6, mean_subtract=True):
+        if n_components // 2 != n_components / 2:
+            raise ValueError("n_components must be even int")
+        self.n_components_ = n_components
+        self.mean_subtract_ = mean_subtract
+        self.eigen_vecs_ = None
+        self.eigen_vals_ = None
+        self.pca_ = None
+        self.cross_condition_mean_ = None
+
+    def fit(self, X):
+        """ Fit a jPCA model to X.
+
+        Parameters
+        ----------
+        X : ndarray (conditions, time, features)
+            Data to fit using jPCA model.
+
+        Returns
+        -------
+        self
+        """
+        if self.n_components_ > X.shape[1]:
+            raise ValueError("n_components is greater than number of features in X.")
+
+        if len(X.shape) != 3:
+            raise ValueError("Data must be in 3 dimensions (conditions, time, features).")
+
+        if self.mean_subtract_:
+            self.cross_condition_mean_ = np.mean(X, axis=0, keepdims=True)
+            X = X - self.cross_condition_mean_
+
+        X_flat = np.concatenate(X, axis=0)
+        self.pca_ = PCA(n_components=self.n_components_)
+        self.pca_.fit(X_flat)
+
+        X_red = [self.pca_.transform(Xi) for Xi in X]
+        dX = np.concatenate([np.diff(Xi, axis=0) for Xi in X_red], axis=0)
+        X_prestate = np.concatenate([Xi[:-1] for Xi in X_red], axis=0)
+        M_skew = self._fit_skew(X_prestate, dX)
+        self.eigen_vals_, self.eigen_vecs_ = self._get_jpcs(M_skew)
+
+        return self
+
+    def transform(self, X):
+        """ Transform X using JPCA components.
+
+        Parameters
+        ----------
+        X : ndarray (conditions, time, features)
+            Data to fit using jPCA model.
+
+        Returns
+        -------
+        ndarray (conditions, time, n_components)
+            X projected onto jPCA components (conditions are preserved).
+            In X_proj, every pair of features correspond to a conjugate pair
+            of JPCA eigenvectors. The pairs are sorted by largest magnitude eigenvalue
+            (i.e. dimensions 0 and 1 in X_proj contains the projection from
+            the conjugate eigenvector pair with the largest eigenvalue magnitude).
+            The projection pair is what captures the rotations.
+
+        """
+
+        if self.mean_subtract_:
+            X = X - self.cross_condition_mean_
+
+        X_red = [self.pca_.transform(Xi) for Xi in X]
+
+        proj_vectors = []
+        for i in range(len(self.eigen_vecs_) // 2):
+            v1 = self.eigen_vecs_[i]
+            v2 = self.eigen_vecs_[i + 1]
+            real_v1 = v1 + v2
+            real_v2 = (v1 - v2) * 1j
+            # remove 0j
+            proj_vectors.append(np.real(real_v1))
+            proj_vectors.append(np.real(real_v2))
+        X_proj = np.stack([X_redi @ np.array(proj_vectors).T for X_redi in X_red], axis=0)
+        return X_proj
+
+    def fit_transform(self, X):
+        """ Fit and transform X using JPCA.
+
+        Parameters
+        ----------
+        X : ndarray (conditions, time, features)
+            Data to be transformed by JPCA.
+
+        Returns
+        -------
+        ndarray (conditions*time, n_components)
+            X projected onto JPCA components.
+        """
+        self.fit(X)
+        return self.transform(X)
+
+    def _fit_skew(self, X_prestate, dX):
+        """
+        Assume the differential equation dX = M * X_prestate. This function will return
+        M_skew, the skew symmetric component of M, that best fits the data. dX and
+        X_prestate should be the same shape.
+        Note: M is solved for using least squares.
+
+        Parameters
+        ----------
+        X_prestate : np.array
+            Time series matrix with the last time step removed.
+
+        dX : np.array
+            Discrete derivative matrix of X obtained by subtracting each row with its
+            previous time step. (derivative at time 0 is not included).
+
+        Returns
+        -------
+        M_skew : np.array
+            Optimal skew symmetric matrix that best fits dX and X_prestate.
+
+        """
+        # guaranteed to be square
+        M0, _, _, _ = np.linalg.lstsq(X_prestate, dX, rcond=None)
+        M0_skew = .5 * (M0 - M0.T)
+        m_skew = self._mat2vec(M0_skew)
+        opt = self._optimize_skew(m_skew, X_prestate, dX)
+        return self._vec2mat(opt.x)
+
+    def _optimize_skew(self, m_skew, X_prestate, dX):
+        """
+        Solves for M_skew using gradient optimization methods.
+        The objective function and derivative equations have closed forms.
+
+        Parameters
+        ----------
+        m_skew : np.array
+            Flattened array (1d vector) of initial M_skew guess
+
+        X_prestate : np.array
+            Time series matrix with the last time step removed.
+
+        dX : np.array
+            Discrete derivative matrix of X obtained by subtracting each row with its
+            previous time step. (derivative at time 0 is not included).
+
+        Returns
+        -------
+        opt : scipy.OptimizeResult object
+            SciPy optimization result.
+        """
+        def objective(x, X_prestate, dX):
+            f = np.linalg.norm(dX - X_prestate@self._vec2mat(x))
+            return f**2
+
+        def derivative(x, X_prestate, dX):
+            D = dX - X_prestate @ self._vec2mat(x)
+            D = D.T @ X_prestate
+            return 2 * self._mat2vec(D - D.T)
+
+        return minimize(objective, m_skew, jac=derivative, args=(X_prestate, dX))
+
+    def _get_jpcs(self, M_skew):
+        """
+        Given optimal M_skew matrix, return the eigenvalues and eigenvectors
+        of M_skew. The eigenvectors/values are sorted by eigenvalue magnitude.
+
+        Parameters
+        ----------
+        M_skew : np.array
+            optimal M_skew (2D matrix)
+
+        Returns
+        -------
+        evecs : np.array
+            2D Array where each row is a jPC.
+
+        evals : np.array of floats
+            Array where each position contains the correpsonding eigenvalue to the
+            jPC in evecs.
+        """
+        evals, evecs = np.linalg.eig(M_skew)
+        evecs = evecs.T
+        # get rid of small real number
+        evals_j = np.imag(evals)
+
+        # sort in descending order
+        sort_indices = np.argsort(-np.absolute(evals_j))
+        return evals_j[sort_indices], evecs[sort_indices]
+
+    def _mat2vec(self, mat):
+        """
+        Convert 2D array into flattened array in column major order.
+
+        Parameters
+        ----------
+        mat : ndarray (num_rows, num_cols)
+            2D matrix to be flattened.
+
+        Returns:
+            1D ndarray of size (num_rows*num_cols)
+        """
+        return mat.flatten('F')
+
+    def _vec2mat(self, vec):
+        """
+        Convert flattened vector into 2D matrix in column major order.
+
+        Parameters
+        ----------
+        vec : 1D ndarray (num_rows*num_cols, 1)
+            Flattened array to be reshaped into 2D square ndarray.
+
+        Returns
+        -------
+            2D ndarray (num_rows, num_cols)
+        """
+        shape = (int(vec.size**(.5)), -1)
+        return np.reshape(vec, shape, 'F')

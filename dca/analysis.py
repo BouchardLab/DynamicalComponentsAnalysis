@@ -16,6 +16,20 @@ def linear_decode_r2(X_train, Y_train, X_test, Y_test, decoding_window=1, offset
     """Train a linear model on the training set and test on the test set.
 
     This will work with batched training data and/or batched test data.
+
+    X_train : ndarray (time, channels) or (batches, time, channels)
+        Feature training data for regression.
+    Y_train : ndarray (time, channels) or (batches, time, channels)
+        Target training data for regression.
+    X_test : ndarray (time, channels) or (batches, time, channels)
+        Feature test data for regression.
+    Y_test : ndarray (time, channels) or (batches, time, channels)
+        Target test data for regression.
+    decoding_window : int
+        Number of time samples of X to use for predicting Y (should be odd). Centered around
+        offset value.
+    offset : int
+        Temporal offset for prediction (0 is same-time prediction).
     """
 
     if isinstance(X_train, np.ndarray) and X_train.ndim == 2:

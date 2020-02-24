@@ -79,6 +79,34 @@ def build_loss(cross_cov_mats, d, ortho_lambda=1., block_toeplitz=False):
     return loss
 
 
+class ObjectiveWrapper(object):
+    def __init__(self, f_params):
+        self.common_computations = None
+        self.params = None
+        self.f_params = f_params
+        self.n_f = 0
+        self.n_g = 0
+
+    def core_computations(self, *args):
+        params = args[0]
+        if not np.array_equal(params, self.params):
+            self.common_computations = self.f_params(*args)
+            self.params = params.copy()
+        return self.common_computations
+
+    def func(self, *args):
+        self.n_f += 1
+        loss, _ = self.core_computations(*args)
+        return loss.detach().cpu().numpy().astype(float)
+
+    def grad(self, *args):
+        self.n_g += 1
+        loss, params_torch = self.core_computations(*args)
+        loss.backward(retain_graph=True)
+        grad = params_torch.grad
+        return grad.detach().cpu().numpy().astype(float)
+
+
 class DynamicalComponentsAnalysis(object):
     """Dynamical Components Analysis.
 
@@ -115,7 +143,7 @@ class DynamicalComponentsAnalysis(object):
     """
     def __init__(self, d=None, T=None, init="random_ortho", n_init=1, tol=1e-6,
                  ortho_lambda=10., verbose=False, use_scipy=True, block_toeplitz=None,
-                 device="cpu", dtype=torch.float64):
+                 device="cpu", dtype=torch.float64, rng_or_seed=None):
         self.d = d
         self.T = T
         self.init = init
@@ -137,6 +165,12 @@ class DynamicalComponentsAnalysis(object):
         else:
             self.block_toeplitz = block_toeplitz
         self.cross_covs = None
+        if rng_or_seed is None:
+            self.rng = np.random
+        elif isinstance(rng_or_seed, np.random.RandomState):
+            self.rng = rng_or_seed
+        else:
+            self.rng = np.random.RandomState(rng_or_seed)
 
     def estimate_cross_covariance(self, X, T=None, regularization=None, reg_ops=None):
         """Estimate the cross covariance matrix from data.
@@ -206,12 +240,12 @@ class DynamicalComponentsAnalysis(object):
         N = self.cross_covs.shape[1]
         if type(self.init) == str:
             if self.init == "random":
-                V_init = np.random.normal(0, 1, (N, d))
+                V_init = self.rng.normal(0, 1, (N, d))
             elif self.init == "random_ortho":
-                V_init = scipy.stats.ortho_group.rvs(N)[:, :d]
+                V_init = scipy.stats.ortho_group.rvs(N, random_state=self.rng)[:, :d]
             elif self.init == "uniform":
                 V_init = np.ones((N, d)) / np.sqrt(N)
-                V_init = V_init + np.random.normal(0, 1e-3, V_init.shape)
+                V_init = V_init + self.rng.normal(0, 1e-3, V_init.shape)
             else:
                 raise ValueError
         elif isinstance(self.init, np.ndarray):
@@ -252,6 +286,7 @@ class DynamicalComponentsAnalysis(object):
             else:
                 callback = None
 
+            """
             def f_df(v_flat):
                 v_flat_torch = torch.tensor(v_flat,
                                             requires_grad=True,
@@ -264,6 +299,19 @@ class DynamicalComponentsAnalysis(object):
                 return (loss.detach().cpu().numpy().astype(float),
                         grad.detach().cpu().numpy().astype(float))
             opt = minimize(f_df, V_init.ravel(), method='L-BFGS-B', jac=True,
+                           options={'disp': self.verbose, 'ftol': self.tol},
+                           callback=callback)
+            """
+            def f_params(v_flat):
+                v_flat_torch = torch.tensor(v_flat,
+                                            requires_grad=True,
+                                            device=self.device,
+                                            dtype=self.dtype)
+                v_torch = v_flat_torch.reshape(N, d)
+                loss = build_loss(c, d, self.ortho_lambda, self.block_toeplitz)(v_torch)
+                return loss, v_flat_torch
+            objective = ObjectiveWrapper(f_params)
+            opt = minimize(objective.func, V_init.ravel(), method='L-BFGS-B', jac=objective.grad,
                            options={'disp': self.verbose, 'ftol': self.tol},
                            callback=callback)
             v = opt.x.reshape(N, d)
@@ -420,7 +468,7 @@ class DynamicalComponentsAnalysisFFT(object):
     """
     def __init__(self, d=None, T=None, init="random_ortho", n_init=1, tol=1e-6,
                  ortho_lambda=10., verbose=False,
-                 device="cpu", dtype=torch.float64):
+                 device="cpu", dtype=torch.float64, rng_or_seed=None):
         self.d = d
         if d > 1:
             raise ValueError('DCAFFT is only defined for d=1.')
@@ -433,6 +481,12 @@ class DynamicalComponentsAnalysisFFT(object):
         self.device = device
         self.dtype = dtype
         self.cross_covs = None
+        if rng_or_seed is None:
+            self.rng = np.random
+        elif isinstance(rng_or_seed, np.random.RandomState):
+            self.rng = rng_or_seed
+        else:
+            self.rng = np.random.RandomState(rng_or_seed)
 
     def fit(self, X, d=None, T=None, n_init=None):
         self.mean_ = X.mean(axis=0, keepdims=True)
@@ -457,12 +511,12 @@ class DynamicalComponentsAnalysisFFT(object):
         N = X.shape[1]
         if type(self.init) == str:
             if self.init == "random":
-                V_init = np.random.normal(0, 1, (N, d))
+                V_init = self.rng.normal(0, 1, (N, d))
             elif self.init == "random_ortho":
-                V_init = scipy.stats.ortho_group.rvs(N)[:, :d]
+                V_init = scipy.stats.ortho_group.rvs(N, random_state=self.rng)[:, :d]
             elif self.init == "uniform":
                 V_init = np.ones((N, d)) / np.sqrt(N)
-                V_init = V_init + np.random.normal(0, 1e-3, V_init.shape)
+                V_init = V_init + self.rng.normal(0, 1e-3, V_init.shape)
             else:
                 raise ValueError
         else:
@@ -532,12 +586,16 @@ class DynamicalComponentsAnalysisFFT(object):
         return self.transform(X)
 
     def score(self):
-        return calc_pi_from_cross_cov_mats(self.cross_covs, self.coef_)
+        if self.block_toeplitz:
+            return calc_pi_from_cross_cov_mats_block_toeplitz(self.cross_covs, self.coef_)
+        else:
+            return calc_pi_from_cross_cov_mats(self.cross_covs, self.coef_)
 
 
 class DynamicalComponentsAnalysisKNN(object):
     """Dynamical Components Analysis using MI estimation using the
-    k-nearest neighbors methos of Kraskov, et al.
+    k-nearest neighbors methos of Kraskov, et al. This estimator is not
+    differentiable and so numerical gradients are taken (very slow!).
 
     WARNING: This code has not been used or tested and is still being developed.
 

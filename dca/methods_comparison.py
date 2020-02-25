@@ -663,7 +663,7 @@ class JPCA(object):
         -------
         self
         """
-        if self.n_components_ > X.shape[1]:
+        if self.n_components_ > X.shape[2]:
             raise ValueError("n_components is greater than number of features in X.")
 
         if len(X.shape) != 3:

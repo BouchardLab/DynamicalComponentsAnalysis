@@ -47,6 +47,22 @@ def test_SFA(noise_dataset):
     model.fit_transform(X)
 
 
+def test_jpca_n_components_check():
+    """ Test that JPCA will throw an error when n_components
+    is higher than number of features in X"""
+    X = []
+    num_features = 100
+    num_conds = 10
+    num_time_steps = 60
+    # 10 conditions
+    for i in range(num_conds):
+        X.append(np.random.rand(num_time_steps, num_features))
+    # ensure even number of features
+    jpca = JPCA(num_features + 2)
+    with pytest.raises(ValueError):
+        jpca.fit_transform(np.array(X))
+
+
 def test_JPCA_multiple_conditions():
     """ Test that a JPCA model can be fit on an array with
     multiple conditions."""

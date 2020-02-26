@@ -15,7 +15,8 @@ from .dca import ortho_reg_fn
 
 __all__ = ['GaussianProcessFactorAnalysis',
            'SlowFeatureAnalysis',
-           'ForecastableComponentsAnalysis']
+           'ForecastableComponentsAnalysis',
+           'JPCA']
 
 
 def make_norm_power(X, T_ent):

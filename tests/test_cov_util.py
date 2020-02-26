@@ -3,6 +3,8 @@ from numpy.testing import (assert_allclose)
 import pytest
 import torch
 
+from dca.dca import init_coef
+from dca.data_util import form_lag_matrix
 from dca.synth_data import gen_lorenz_data
 from dca.cov_util import (calc_cross_cov_mats_from_cov,
                           calc_cov_from_cross_cov_mats,
@@ -10,7 +12,8 @@ from dca.cov_util import (calc_cross_cov_mats_from_cov,
                           calc_pi_from_cross_cov_mats,
                           calc_pi_from_cross_cov_mats_block_toeplitz,
                           calc_pi_from_cov,
-                          calc_pi_from_data)
+                          calc_pi_from_data,
+                          project_cross_cov_mats)
 
 
 @pytest.fixture
@@ -112,3 +115,34 @@ def test_compare_ccm_block_toeplitz_pi_grads(lorenz_dataset):
     grad_BT = tproj.grad
 
     assert torch.allclose(grad, grad_BT)
+
+
+def test_projected_cov_calc(lorenz_dataset):
+    """Test the project_cross_cov_mats function by also directly projecting
+    the data."""
+    rng = np.random.RandomState(20200226)
+    T, d, X, _, _ = lorenz_dataset
+    X = X[:, :3]
+    N = 3
+    d = 2
+    T = 6
+    V = init_coef(N, d, rng, 'random_ortho')
+    tV = torch.tensor(V)
+
+    ccms = calc_cross_cov_mats_from_data(X, T)
+    tccms = torch.tensor(ccms)
+    pccms = project_cross_cov_mats(ccms, V)
+    cov = calc_cov_from_cross_cov_mats(pccms)
+
+    XL = form_lag_matrix(X, T)
+    big_V = np.zeros((T * N, T * d))
+    for ii in range(T):
+        big_V[ii * N:(ii + 1) * N, ii * d:(ii + 1) * d] = V
+    Xp = XL.dot(big_V)
+    cov2 = np.cov(Xp, rowvar=False)
+    assert_allclose(cov, cov2, rtol=1e-3)
+
+    tpccms = project_cross_cov_mats(tccms, tV)
+    tcov = calc_cov_from_cross_cov_mats(tpccms)
+    assert torch.allclose(tcov, torch.tensor(cov2), rtol=1e-3)
+    assert_allclose(tcov.numpy(), cov2, rtol=1e-3)

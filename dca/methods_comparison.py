@@ -633,7 +633,7 @@ class JPCA(object):
 
     eigen_vals_ : list
         List of eigenvalues from JPCA skew symmetric matrix. The index
-        of each eigenvalue corresponds with the eigenvector in eigen_vecs_.
+        of each eigenvalue corresponds with the eigenvector in `eigen_vecs_`.
 
     pca_ : sklearn.decomp.PCA object
         PCA object used to transform X to X_red.

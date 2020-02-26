@@ -107,6 +107,38 @@ class ObjectiveWrapper(object):
         return grad.detach().cpu().numpy().astype(float)
 
 
+def init_coef(N, d, rng, init):
+    """Initialize a projection coefficent matrix.
+
+    Parameters
+    ----------
+    N : int
+        Original dimensionality.
+    d : int
+        Projected dimensionality.
+    rng : np.random.RandomState
+        Random state for generation.
+    init : str or ndarray
+        Initialization type.
+    """
+    if type(init) == str:
+        if init == "random":
+            V_init = rng.normal(0, 1, (N, d))
+        elif init == "random_ortho":
+            V_init = scipy.stats.ortho_group.rvs(N, random_state=rng)[:, :d]
+        elif init == "uniform":
+            V_init = np.ones((N, d)) / np.sqrt(N)
+            V_init = V_init + rng.normal(0, 1e-3, V_init.shape)
+        else:
+            raise ValueError
+    elif isinstance(init, np.ndarray):
+        V_init = init.copy()
+    else:
+        raise ValueError
+    V_init /= np.linalg.norm(V_init, axis=0, keepdims=True)
+    return V_init
+
+
 class DynamicalComponentsAnalysis(object):
     """Dynamical Components Analysis.
 
@@ -238,22 +270,7 @@ class DynamicalComponentsAnalysis(object):
             raise ValueError('Call estimate_cross_covariance() first.')
 
         N = self.cross_covs.shape[1]
-        if type(self.init) == str:
-            if self.init == "random":
-                V_init = self.rng.normal(0, 1, (N, d))
-            elif self.init == "random_ortho":
-                V_init = scipy.stats.ortho_group.rvs(N, random_state=self.rng)[:, :d]
-            elif self.init == "uniform":
-                V_init = np.ones((N, d)) / np.sqrt(N)
-                V_init = V_init + self.rng.normal(0, 1e-3, V_init.shape)
-            else:
-                raise ValueError
-        elif isinstance(self.init, np.ndarray):
-            V_init = self.init.copy()
-        else:
-            raise ValueError
-        V_init /= np.linalg.norm(V_init, axis=0, keepdims=True)
-
+        V_init = init_coef(N, d, self.rng, self.init)
         v = torch.tensor(V_init, requires_grad=True,
                          device=self.device, dtype=self.dtype)
 

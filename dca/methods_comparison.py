@@ -49,6 +49,11 @@ class ForecastableComponentsAnalysis(object):
     Runs FCA on multidimensional timeseries data X to discover a projection
     onto a d-dimensional subspace which maximizes the entropy of the power spectrum.
 
+    Based on http://proceedings.mlr.press/v28/goerg13.html, but does not calculate
+    the gradients in the same way. This implementation uses autograd.
+
+    Note: this has not been carefully tested.
+
     Parameters
     ----------
     d: int
@@ -286,6 +291,8 @@ def log_likelihood(mu, sigma, y, T):
 
 class GaussianProcessFactorAnalysis(object):
     """Gaussian Process Factor Analysis model.
+
+    Based on formulation in https://journals.physiology.org/doi/full/10.1152/jn.90941.2008.
 
     Parameters
     ----------
@@ -553,6 +560,8 @@ class GaussianProcessFactorAnalysis(object):
 class SlowFeatureAnalysis(object):
     """Slow Feature Analysis (SFA)
 
+    Based on https://www.mitpressjournals.org/doi/abs/10.1162/089976602317318938.
+
     Parameters
     ----------
     n_components : int
@@ -614,7 +623,10 @@ class SlowFeatureAnalysis(object):
 
 
 class JPCA(object):
-    """ jPCA.
+    """ Model for extracting rotational dynamics from timeseries data using jPCA.
+
+    As presented in https://www.nature.com/articles/nature11129.
+    Based on code from https://churchland.zuckermaninstitute.columbia.edu/content/code.
 
     Parameters
     ----------

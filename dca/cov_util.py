@@ -16,23 +16,42 @@ def rectify_spectrum(cov, epsilon=1e-6, verbose=False):
             print("Warning: non-PSD matrix (had to increase eigenvalues)")
 
 
-def toeplitzify(C, T, N, symmetrize=True):
-    C_toep = np.zeros((T * N, T * N))
+def toeplitzify(cov, T, N, symmetrize=True):
+    """Make a matrix block-Toeplitz by averaging along the block diagonal.
+
+    Parameters
+    ----------
+    cov : ndarray (T*N, T*N)
+        Covariance matrix to make block toeplitz.
+    T : int
+        Number of blocks.
+    N : int
+        Number of features per block.
+    symmetrize : bool
+        Whether to ensure that the whole matrix is symmetric.
+        Optional (default=True).
+
+    Returns
+    -------
+    cov_toep : ndarray (T*N, T*N)
+        Toeplitzified matrix.
+    """
+    cov_toep = np.zeros((T * N, T * N))
     for delta_t in range(T):
         to_avg_lower = np.zeros((T - delta_t, N, N))
         to_avg_upper = np.zeros((T - delta_t, N, N))
         for i in range(T - delta_t):
-            to_avg_lower[i] = C[(delta_t + i) * N:(delta_t + i + 1) * N, i * N:(i + 1) * N]
-            to_avg_upper[i] = C[i * N:(i + 1) * N, (delta_t + i) * N:(delta_t + i + 1) * N]
+            to_avg_lower[i] = cov[(delta_t + i) * N:(delta_t + i + 1) * N, i * N:(i + 1) * N]
+            to_avg_upper[i] = cov[i * N:(i + 1) * N, (delta_t + i) * N:(delta_t + i + 1) * N]
         avg_lower = np.mean(to_avg_lower, axis=0)
         avg_upper = np.mean(to_avg_upper, axis=0)
         if symmetrize:
             avg_lower = 0.5 * (avg_lower + avg_upper.T)
-            avg_upper = 0.5 * (avg_lower.T + avg_upper)
+            avg_upper = avg_lower.T
         for i in range(T - delta_t):
-            C_toep[(delta_t + i) * N:(delta_t + i + 1) * N, i * N:(i + 1) * N] = avg_lower
-            C_toep[i * N:(i + 1) * N, (delta_t + i) * N:(delta_t + i + 1) * N] = avg_upper
-    return C_toep
+            cov_toep[(delta_t + i) * N:(delta_t + i + 1) * N, i * N:(i + 1) * N] = avg_lower
+            cov_toep[i * N:(i + 1) * N, (delta_t + i) * N:(delta_t + i + 1) * N] = avg_upper
+    return cov_toep
 
 
 def calc_chunked_cov(X, T, stride, chunks, cov_est=None):

@@ -1,5 +1,5 @@
 import numpy as np
-from numpy.testing import (assert_allclose)
+from numpy.testing import assert_allclose
 import pytest
 import torch
 
@@ -13,7 +13,8 @@ from dca.cov_util import (calc_cross_cov_mats_from_cov,
                           calc_pi_from_cross_cov_mats_block_toeplitz,
                           calc_pi_from_cov,
                           calc_pi_from_data,
-                          project_cross_cov_mats)
+                          project_cross_cov_mats,
+                          toeplitzify)
 
 
 @pytest.fixture
@@ -140,9 +141,10 @@ def test_projected_cov_calc(lorenz_dataset):
         big_V[ii * N:(ii + 1) * N, ii * d:(ii + 1) * d] = V
     Xp = XL.dot(big_V)
     cov2 = np.cov(Xp, rowvar=False)
-    assert_allclose(cov, cov2, rtol=1e-3)
+    cov2 = toeplitzify(cov2, T, d)
+    assert_allclose(cov, cov2)
 
     tpccms = project_cross_cov_mats(tccms, tV)
     tcov = calc_cov_from_cross_cov_mats(tpccms)
-    assert torch.allclose(tcov, torch.tensor(cov2), rtol=1e-3)
-    assert_allclose(tcov.numpy(), cov2, rtol=1e-3)
+    assert torch.allclose(tcov, torch.tensor(cov2))
+    assert_allclose(tcov.numpy(), cov2)

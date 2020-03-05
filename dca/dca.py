@@ -9,9 +9,12 @@ import torch.nn.functional as F
 from .cov_util import (calc_cross_cov_mats_from_data, calc_pi_from_cross_cov_mats,
                        form_lag_matrix, calc_pi_from_cross_cov_mats_block_toeplitz)
 
-__all__ = ["DynamicalComponentsAnalysis",
-           "DynamicalComponentsAnalysisFFT",
-           "DynamicalComponentsAnalysisKNN"]
+__all__ = ['DynamicalComponentsAnalysis',
+           'DynamicalComponentsAnalysisFFT',
+           'DynamicalComponentsAnalysisKNN',
+           'ortho_reg_fn',
+           'build_loss',
+           'init_coef']
 
 
 def ortho_reg_fn(V, ortho_lambda):
@@ -420,10 +423,23 @@ class DynamicalComponentsAnalysis(object):
         self.fit(X, d=d, T=T, regularization=regularization, reg_ops=reg_ops, n_init=n_init)
         return self.transform(X)
 
-    def score(self):
-        """Calculate the PI of the training data for the DCA projection.
+    def score(self, X=None):
+        """Calculate the PI of data for the DCA projection.
+
+        Parameters
+        ----------
+        X : ndarray or list
+            Optional. If X is none, calculate PI from the training data.
+            If X is given, calcuate the PI of X for the learned projections.
         """
-        return calc_pi_from_cross_cov_mats(self.cross_covs, self.coef_)
+        if X is None:
+            cross_covs = self.cross_covs
+        else:
+            cross_covs = calc_cross_cov_mats_from_data(X, T=self.T)
+        if self.block_toeplitz:
+            return calc_pi_from_cross_cov_mats_block_toeplitz(cross_covs, self.coef_)
+        else:
+            return calc_pi_from_cross_cov_mats(cross_covs, self.coef_)
 
 
 def make_cepts2(X, T_pi):
@@ -602,11 +618,14 @@ class DynamicalComponentsAnalysisFFT(object):
         self.fit(X, d=d, T=T)
         return self.transform(X)
 
-    def score(self):
-        if self.block_toeplitz:
-            return calc_pi_from_cross_cov_mats_block_toeplitz(self.cross_covs, self.coef_)
-        else:
-            return calc_pi_from_cross_cov_mats(self.cross_covs, self.coef_)
+    def score(self, X):
+        """Calculate the PI of data for the DCA projection.
+
+        Parameters
+        ----------
+        X : ndarray or list
+        """
+        return pi_fft(X, self.coef_, self.T)
 
 
 class DynamicalComponentsAnalysisKNN(object):

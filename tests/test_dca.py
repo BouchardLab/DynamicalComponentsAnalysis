@@ -24,6 +24,8 @@ def test_DCA(noise_dataset):
 
     model = DCA(d=3, T=10, n_init=2)
     model.fit(X)
+    model.score()
+    model.score(X)
 
     model = DCA(d=3, T=10, use_scipy=False)
     model.fit(X)
@@ -67,6 +69,7 @@ def test_DCAFFT(noise_dataset):
     model.fit(X)
     model.transform(X)
     model.fit_transform(X)
+    model.score(X)
 
 
 def test_DCAFFT_error(noise_dataset):

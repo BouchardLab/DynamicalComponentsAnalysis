@@ -9,6 +9,17 @@ from sklearn.utils.extmath import randomized_svd
 
 
 def rectify_spectrum(cov, epsilon=1e-6, verbose=False):
+    """Rectify the spectrum of a covariance matrix.
+
+    Parameters
+    ----------
+    cov : ndarray
+        Covariance matrix
+    epsilon : float
+        Minimum eigenvalue for the rectified spectrum.
+    verbose : bool
+        Whethere to print when the spectrum needs to be rectified.
+    """
     min_eig = np.min(sp.linalg.eigvalsh(cov))
     if min_eig < 0:
         cov += (-min_eig + epsilon) * np.eye(cov.shape[0])
@@ -57,6 +68,28 @@ def toeplitzify(cov, T, N, symmetrize=True):
 def calc_chunked_cov(X, T, stride, chunks, cov_est=None):
     """Calculate an unormalized (by sample count) lagged covariance matrix
     in chunks to save memory.
+
+    Parameters
+    ----------
+    X : np.ndarray, shape (# time-steps, N)
+        The N-dimensional time series data from which the cross-covariance
+        matrices are computed.
+    T : int
+        The number of time lags.
+    stride : int
+        The number of time-points to skip between samples.
+    chunks : int
+        Number of chunks to break the data into when calculating the lagged cross
+        covariance. More chunks will mean less memory used
+    cov_est : ndarray
+        Current estimate of unnormalized cov_est to be added to.
+
+    Return
+    ------
+    cov_est : ndarray
+        Current covariance estimate.
+    n_samples
+        How many samples were used.
     """
     if cov_est is None:
         cov_est = 0.
@@ -248,10 +281,12 @@ def calc_pi_from_data(X, T):
     """Calculates the mutual information ("predictive information"
     or "PI") between variables  {1,...,T_pi} and {T_pi+1,...,2*T_pi}, which
     are jointly Gaussian with covariance matrix cov_2_T_pi.
+
     Parameters
     ----------
     cov_2_T_pi : np.ndarray, shape (2*T_pi, 2*T_pi)
         Covariance matrix.
+
     Returns
     -------
     PI : float
@@ -266,10 +301,12 @@ def calc_pi_from_cov(cov_2_T_pi):
     """Calculates the mutual information ("predictive information"
     or "PI") between variables  {1,...,T_pi} and {T_pi+1,...,2*T_pi}, which
     are jointly Gaussian with covariance matrix cov_2_T_pi.
+    j
     Parameters
     ----------
     cov_2_T_pi : np.ndarray, shape (2*T_pi, 2*T_pi)
         Covariance matrix.
+
     Returns
     -------
     PI : float
@@ -308,7 +345,7 @@ def project_cross_cov_mats(cross_cov_mats, proj):
     Returns
     -------
     cross_cov_mats_proj : ndarray, shape (T, d, d)
-        Mutual information in nats.
+        Projected cross covariances matrices.
     """
     if isinstance(cross_cov_mats, torch.Tensor):
         use_torch = True

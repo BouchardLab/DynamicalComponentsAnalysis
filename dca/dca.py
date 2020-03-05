@@ -9,9 +9,12 @@ import torch.nn.functional as F
 from .cov_util import (calc_cross_cov_mats_from_data, calc_pi_from_cross_cov_mats,
                        form_lag_matrix, calc_pi_from_cross_cov_mats_block_toeplitz)
 
-__all__ = ["DynamicalComponentsAnalysis",
-           "DynamicalComponentsAnalysisFFT",
-           "DynamicalComponentsAnalysisKNN"]
+__all__ = ['DynamicalComponentsAnalysis',
+           'DynamicalComponentsAnalysisFFT',
+           'DynamicalComponentsAnalysisKNN',
+           'ortho_reg_fn',
+           'build_loss',
+           'init_coef']
 
 
 def ortho_reg_fn(V, ortho_lambda):

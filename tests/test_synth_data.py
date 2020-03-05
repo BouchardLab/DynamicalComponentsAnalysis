@@ -1,7 +1,9 @@
 import numpy as np
 
 from dca.synth_data import (gen_gp_cov, calc_pi_for_gp, gen_gp_kernel, sample_gp, embed_gp,
-                            gen_lorenz_data, oscillators_dynamics_mat, sample_oscillators)
+                            gen_lorenz_data, oscillators_dynamics_mat, sample_oscillators,
+                            oscillators_cross_cov_mats, median_subspace,
+                            embedded_lorenz_cross_cov_mats)
 
 
 def test_gp_kernels():
@@ -26,3 +28,17 @@ def test_oscillators():
     """
     A = oscillators_dynamics_mat()
     sample_oscillators(A, 1000)
+
+
+def test_oscillators_cross_cov_mats():
+    """Test that cross-cov mats can be made for the oscillators.
+    """
+    A = oscillators_dynamics_mat(N=7)
+    ccms = oscillators_cross_cov_mats(A, T=5)
+    assert ccms.shape == (5, 14, 14)
+
+
+def test_embedded_lorenz_cross_crov_mats():
+    ccms = embedded_lorenz_cross_cov_mats(11, 7, num_lorenz_samples=1000,
+                                          num_subspace_samples=100)
+    assert ccms.shape == (7, 11, 11)

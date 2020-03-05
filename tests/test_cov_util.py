@@ -148,3 +148,10 @@ def test_projected_cov_calc(lorenz_dataset):
     tcov = calc_cov_from_cross_cov_mats(tpccms)
     assert torch.allclose(tcov, torch.tensor(cov2))
     assert_allclose(tcov.numpy(), cov2)
+
+
+def test_regularize_cov(lorenz_dataset):
+    _, _, X, _, _ = lorenz_dataset
+    X = X[:, :3]
+    ccms = calc_cross_cov_mats_from_data(X, 5, regularization='kron',
+                                         reg_ops={'num_folds': 3})

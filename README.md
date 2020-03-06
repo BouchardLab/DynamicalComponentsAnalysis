@@ -2,6 +2,7 @@
 
 [![Build Status](https://travis-ci.com/BouchardLab/DynamicalComponentsAnalysis.svg?branch=master)](https://travis-ci.com/BouchardLab/DynamicalComponentsAnalysis)
 [![Documentation Status](https://readthedocs.org/projects/dynamicalcomponentsanalysis/badge/?version=latest)](https://dynamicalcomponentsanalysis.readthedocs.io/en/latest/?badge=latest)
+[![codecov](https://codecov.io/gh/BouchardLab/DynamicalComponentsAnalysis/branch/master/graph/badge.svg)](https://codecov.io/gh/BouchardLab/DynamicalComponentsAnalysis)
 
 Implementation of the methods and analyses in [Unsupervised Discovery of Temporal Structure in Noisy Data with Dynamical Components Analysis](https://arxiv.org/abs/1905.09944).
 

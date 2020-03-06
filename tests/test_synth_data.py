@@ -2,7 +2,7 @@ import numpy as np
 
 from dca.synth_data import (gen_gp_cov, calc_pi_for_gp, gen_gp_kernel, sample_gp, embed_gp,
                             gen_lorenz_data, oscillators_dynamics_mat, sample_oscillators,
-                            oscillators_cross_cov_mats, median_subspace,
+                            oscillators_cross_cov_mats,
                             embedded_lorenz_cross_cov_mats)
 
 

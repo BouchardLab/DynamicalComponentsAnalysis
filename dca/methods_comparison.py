@@ -653,6 +653,10 @@ class JPCA(object):
     cross_condition_mean_ : ndarray (time, features)
         Cross condition mean of X during fit.
 
+    proj_vectors_ : list
+        List of projection vectors sorted in order by conjugate eigenvalue pairs.
+
+
     """
     def __init__(self, n_components=6, mean_subtract=True):
         if n_components // 2 != n_components / 2:
@@ -663,6 +667,7 @@ class JPCA(object):
         self.eigen_vals_ = None
         self.pca_ = None
         self.cross_condition_mean_ = None
+        self.proj_vectors_ = None
 
     def fit(self, X):
         """ Fit a jPCA model to X.
@@ -694,8 +699,20 @@ class JPCA(object):
         dX = np.concatenate([np.diff(Xi, axis=0) for Xi in X_red], axis=0)
         X_prestate = np.concatenate([Xi[:-1] for Xi in X_red], axis=0)
         M_skew = self._fit_skew(X_prestate, dX)
+
         self.eigen_vals_, self.eigen_vecs_ = self._get_jpcs(M_skew)
 
+        self.proj_vectors_ = []
+        for i in range(len(self.eigen_vecs_) // 2):
+            v1 = self.eigen_vecs_[2 * i]
+            v2 = self.eigen_vecs_[2 * i + 1]
+            real_v1 = np.real(v1 + v2)
+            real_v1 /= np.linalg.norm(real_v1)
+            real_v2 = np.imag(v1 - v2)
+            real_v2 /= np.linalg.norm(real_v2)
+            self.proj_vectors_.append(real_v1)
+            self.proj_vectors_.append(real_v2)
+        self.proj_vectors_ = np.array(self.proj_vectors_)
         return self
 
     def transform(self, X):
@@ -722,17 +739,7 @@ class JPCA(object):
             X = X - self.cross_condition_mean_
 
         X_red = [self.pca_.transform(Xi) for Xi in X]
-
-        proj_vectors = []
-        for i in range(len(self.eigen_vecs_) // 2):
-            v1 = self.eigen_vecs_[i]
-            v2 = self.eigen_vecs_[i + 1]
-            real_v1 = v1 + v2
-            real_v2 = (v1 - v2) * 1j
-            # remove 0j
-            proj_vectors.append(np.real(real_v1))
-            proj_vectors.append(np.real(real_v2))
-        X_proj = np.stack([X_redi @ np.array(proj_vectors).T for X_redi in X_red], axis=0)
+        X_proj = np.stack([X_redi @ self.proj_vectors_.T for X_redi in X_red], axis=0)
         return X_proj
 
     def fit_transform(self, X):

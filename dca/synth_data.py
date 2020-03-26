@@ -319,7 +319,7 @@ def median_subspace(N, D, rng, num_samples=5000, V_0=None):
     return median_subspace
 
 
-def embedded_lorenz_cross_cov_mats(N, T, snr=1., noise_dim=7., return_samples=False,
+def embedded_lorenz_cross_cov_mats(N, T, snr=1., noise_dim=7, return_samples=False,
                                    num_lorenz_samples=10000, num_subspace_samples=5000,
                                    seed=20200326):
     """Embed the Lorenz system into high dimensions with additive spatially
@@ -358,7 +358,7 @@ def embedded_lorenz_cross_cov_mats(N, T, snr=1., noise_dim=7., return_samples=Fa
     else:
         V_dynamics = random_basis(N, 3, rng)
     # Generate a subspace with median principal angles w.r.t. dynamics subspace
-    V_noise = median_subspace(N, noise_dim, num_samples=num_subspace_samples, V_0=V_dynamics)
+    V_noise = median_subspace(N, noise_dim, rng, num_samples=num_subspace_samples, V_0=V_dynamics)
     # Extend V_noise to a basis for R^N
     if noise_dim < N:
         V_noise_comp = scipy.linalg.orth(np.eye(N) - np.dot(V_noise, V_noise.T))

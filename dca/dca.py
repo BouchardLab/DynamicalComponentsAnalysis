@@ -83,6 +83,13 @@ def build_loss(cross_cov_mats, d, ortho_lambda=1., block_toeplitz=False):
 
 
 class ObjectiveWrapper(object):
+    """Helper object to cache gradient computation for minimization.
+
+    Parameters
+    ----------
+    f_params : callable
+        Function to calculate the loss as a function of the parameters.
+    """
     def __init__(self, f_params):
         self.common_computations = None
         self.params = None
@@ -91,6 +98,14 @@ class ObjectiveWrapper(object):
         self.n_g = 0
 
     def core_computations(self, *args):
+        """Calculate the part of the computation that is common to computing
+        the loss and the gradient.
+
+        Parameters
+        ----------
+        args
+            Any other arguments that self.f_params needs.
+        """
         params = args[0]
         if not np.array_equal(params, self.params):
             self.common_computations = self.f_params(*args)
@@ -98,11 +113,25 @@ class ObjectiveWrapper(object):
         return self.common_computations
 
     def func(self, *args):
+        """Calculate and return the loss.
+
+        Parameters
+        ----------
+        args
+            Any other arguments that self.f_params needs.
+        """
         self.n_f += 1
         loss, _ = self.core_computations(*args)
         return loss.detach().cpu().numpy().astype(float)
 
     def grad(self, *args):
+        """Calculate and return the gradient of the loss.
+
+        Parameters
+        ----------
+        args
+            Any other arguments that self.f_params needs.
+        """
         self.n_g += 1
         loss, params_torch = self.core_computations(*args)
         loss.backward(retain_graph=True)
@@ -296,11 +325,14 @@ class DynamicalComponentsAnalysis(object):
                     reg_val = ortho_reg_fn(v_torch, self.ortho_lambda)
                     loss = loss.detach().cpu().numpy()
                     reg_val = reg_val.detach().cpu().numpy()
+                    PI = -(loss - reg_val)
                     if record_V:
                         self.V_seq.append(v_flat.reshape(N, d))
                     if self.verbose:
-                        print("PI: {} nats, reg: {}".format(str(np.round(-loss, 4)),
-                                                            str(np.round(reg_val, 4))))
+                        string = "Loss {}, PI: {} nats, reg: {}"
+                        print(string.format(str(np.round(loss, 4)),
+                                            str(np.round(PI, 4)),
+                                            str(np.round(reg_val, 4))))
 
                 callback(V_init)
             else:
@@ -379,6 +411,8 @@ class DynamicalComponentsAnalysis(object):
         n_init : int
             Number of random restarts (optional.)
         """
+        if n_init is None:
+            n_init = self.n_init
         self.estimate_cross_covariance(X, T=T, regularization=regularization,
                                        reg_ops=reg_ops)
         self.fit_projection(d=d, n_init=n_init)

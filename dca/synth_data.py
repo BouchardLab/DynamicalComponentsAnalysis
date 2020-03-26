@@ -293,25 +293,25 @@ def sample_oscillators(A, T, sigma=1.):
     return z
 
 
-def gen_noise_cov(N, D, var, V_noise=None):
+def gen_noise_cov(N, D, var, rng, V_noise=None):
     noise_spectrum = var * np.exp(-2 * np.arange(N) / D)
     if V_noise is None:
-        V_noise = scipy.stats.ortho_group.rvs(N)
+        V_noise = scipy.stats.ortho_group.rvs(N, random_state=rng)
     noise_cov = np.dot(V_noise, np.dot(np.diag(noise_spectrum), V_noise.T))
     return noise_cov
 
 
-def random_basis(N, D):
-    return scipy.stats.ortho_group.rvs(N)[:, :D]
+def random_basis(N, D, rng):
+    return scipy.stats.ortho_group.rvs(N, random_state=rng)[:, :D]
 
 
-def median_subspace(N, D, num_samples=5000, V_0=None):
+def median_subspace(N, D, rng, num_samples=5000, V_0=None):
     subspaces = np.zeros((num_samples, N, D))
     angles = np.zeros((num_samples, min(D, V_0.shape[1])))
     if V_0 is None:
         V_0 = np.eye(N)[:, :D]
     for i in range(num_samples):
-        subspaces[i] = random_basis(N, D)
+        subspaces[i] = random_basis(N, D, rng)
         angles[i] = np.rad2deg(scipy.linalg.subspace_angles(V_0, subspaces[i]))
     median_angles = np.median(angles, axis=0)
     median_subspace_idx = np.argmin(np.sum((angles - median_angles)**2, axis=1))
@@ -320,33 +320,60 @@ def median_subspace(N, D, num_samples=5000, V_0=None):
 
 
 def embedded_lorenz_cross_cov_mats(N, T, snr=1., noise_dim=7, return_samples=False,
-                                   num_lorenz_samples=10000, num_subspace_samples=5000):
+                                   num_lorenz_samples=10000, num_subspace_samples=5000,
+                                   seed=20200326):
+    """Embed the Lorenz system into high dimensions with additive spatially
+    structued white noise. Signal and noise subspaces are oriented with the
+    median subspace angle.
+
+    Parameters
+    ----------
+    N : int
+        Embedding dimension.
+    T : int
+        Number of timesteps (2 * T_pi)
+    snr : float
+        Signal-to-noise ratio. Specifically it is the ratio of the largest
+        eigenvalue of the signal covariance to the largest eigenvalue of the
+        noise covariance.
+    noise_dim : int
+        Dimension at which noise eigenvalues fall to 1/e.
+    return_samples : bool
+        Whether to return cross_cov_mats or data samples.
+    num_lorenz_samples : int
+        Number of data samples to use.
+    num_subspace_samples : int
+        Number of random subspaces used to calculate the median relative angle.
+    seed : int
+        Seed for Numpy random state.
+    """
+
+    rng = np.random.RandomState(seed)
     # Generate Lorenz dynamics
     X_dynamics = gen_lorenz_data(num_lorenz_samples)
     dynamics_var = np.max(scipy.linalg.eigvalsh(np.cov(X_dynamics.T)))
     # Generate dynamics embedding matrix (will remain fixed)
-    np.random.seed(42)
     if N == 3:
         V_dynamics = np.eye(3)
     else:
-        V_dynamics = random_basis(N, 3)
+        V_dynamics = random_basis(N, 3, rng)
     # Generate a subspace with median principal angles w.r.t. dynamics subspace
-    V_noise = median_subspace(N, noise_dim, num_samples=num_subspace_samples, V_0=V_dynamics)
+    V_noise = median_subspace(N, noise_dim, rng, num_samples=num_subspace_samples, V_0=V_dynamics)
     # Extend V_noise to a basis for R^N
     if noise_dim < N:
         V_noise_comp = scipy.linalg.orth(np.eye(N) - np.dot(V_noise, V_noise.T))
         V_noise = np.concatenate((V_noise, V_noise_comp), axis=1)
     # Add noise covariance
     noise_var = dynamics_var / snr
-    noise_cov = gen_noise_cov(N, noise_dim, noise_var, V_noise=V_noise)
+    noise_cov = gen_noise_cov(N, noise_dim, noise_var, rng, V_noise=V_noise)
+    # Generate actual samples of high-D data
     cross_cov_mats = calc_cross_cov_mats_from_data(X_dynamics, T)
     cross_cov_mats = np.array([V_dynamics.dot(C).dot(V_dynamics.T) for C in cross_cov_mats])
     cross_cov_mats[0] += noise_cov
-    # Generate actual samples of high-D data
     if return_samples:
         X_samples = (np.dot(X_dynamics, V_dynamics.T) +
-                     np.random.multivariate_normal(mean=np.zeros(N),
-                                                   cov=noise_cov, size=len(X_dynamics)))
+                     rng.multivariate_normal(mean=np.zeros(N),
+                                             cov=noise_cov, size=len(X_dynamics)))
         return cross_cov_mats, X_samples
     else:
         return cross_cov_mats

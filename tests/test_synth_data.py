@@ -42,3 +42,16 @@ def test_embedded_lorenz_cross_crov_mats():
     ccms = embedded_lorenz_cross_cov_mats(11, 7, num_lorenz_samples=1000,
                                           num_subspace_samples=100)
     assert ccms.shape == (7, 11, 11)
+
+    ccms, X = embedded_lorenz_cross_cov_mats(11, 7, num_lorenz_samples=1000,
+                                             num_subspace_samples=100,
+                                             return_samples=True)
+    assert ccms.shape == (7, 11, 11)
+    assert X.shape == (1000, 11)
+
+    ccms, X = embedded_lorenz_cross_cov_mats(11, 7, noise_dim=np.inf,
+                                             num_lorenz_samples=1000,
+                                             num_subspace_samples=100,
+                                             return_samples=True)
+    assert ccms.shape == (7, 11, 11)
+    assert X.shape == (1000, 11)

@@ -337,7 +337,8 @@ def embedded_lorenz_cross_cov_mats(N, T, snr=1., noise_dim=7, return_samples=Fal
         eigenvalue of the signal covariance to the largest eigenvalue of the
         noise covariance.
     noise_dim : int
-        Dimension at which noise eigenvalues fall to 1/e.
+        Dimension at which noise eigenvalues fall to 1/e. If noise_dim is
+        np.inf then a flat spectrum is used.
     return_samples : bool
         Whether to return cross_cov_mats or data samples.
     num_lorenz_samples : int
@@ -352,20 +353,24 @@ def embedded_lorenz_cross_cov_mats(N, T, snr=1., noise_dim=7, return_samples=Fal
     # Generate Lorenz dynamics
     X_dynamics = gen_lorenz_data(num_lorenz_samples)
     dynamics_var = np.max(scipy.linalg.eigvalsh(np.cov(X_dynamics.T)))
+    noise_var = dynamics_var / snr
     # Generate dynamics embedding matrix (will remain fixed)
     if N == 3:
         V_dynamics = np.eye(3)
     else:
         V_dynamics = random_basis(N, 3, rng)
-    # Generate a subspace with median principal angles w.r.t. dynamics subspace
-    V_noise = median_subspace(N, noise_dim, rng, num_samples=num_subspace_samples, V_0=V_dynamics)
-    # Extend V_noise to a basis for R^N
-    if noise_dim < N:
-        V_noise_comp = scipy.linalg.orth(np.eye(N) - np.dot(V_noise, V_noise.T))
-        V_noise = np.concatenate((V_noise, V_noise_comp), axis=1)
-    # Add noise covariance
-    noise_var = dynamics_var / snr
-    noise_cov = gen_noise_cov(N, noise_dim, noise_var, rng, V_noise=V_noise)
+    if noise_dim == np.inf:
+        noise_cov = np.eye(N) * noise_var
+    else:
+        # Generate a subspace with median principal angles w.r.t. dynamics subspace
+        V_noise = median_subspace(N, noise_dim, rng, num_samples=num_subspace_samples,
+                                  V_0=V_dynamics)
+        # Extend V_noise to a basis for R^N
+        if noise_dim < N:
+            V_noise_comp = scipy.linalg.orth(np.eye(N) - np.dot(V_noise, V_noise.T))
+            V_noise = np.concatenate((V_noise, V_noise_comp), axis=1)
+        # Add noise covariance
+        noise_cov = gen_noise_cov(N, noise_dim, noise_var, rng, V_noise=V_noise)
     # Generate actual samples of high-D data
     cross_cov_mats = calc_cross_cov_mats_from_data(X_dynamics, T)
     cross_cov_mats = np.array([V_dynamics.dot(C).dot(V_dynamics.T) for C in cross_cov_mats])

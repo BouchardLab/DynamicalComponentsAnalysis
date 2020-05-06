@@ -202,9 +202,9 @@ class DynamicalComponentsAnalysis(object):
         memory intensive on cpu for T>~10.
     chunk_cov_estimate : int or None
         If `None`, cov is estimated from entire time series. If an `int`, cov is estimated
-        by chunking up time series and averaging covariances from chucks. This can be faster
-        for long timeseries. Requires that the length of the shortest timeseries in the batch
-        is longer than `2 * T * chunk_cov_estimate`.
+        by chunking up time series and averaging covariances from chucks. This can use less memory
+        and be faster for long timeseries. Requires that the length of the shortest timeseries
+        in the batch is longer than `2 * T * chunk_cov_estimate`.
     device : str
         What device to run the computation on in Pytorch.
     dtype : pytorch.dtype

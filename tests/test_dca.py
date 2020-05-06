@@ -48,6 +48,9 @@ def test_DCA_short(noise_dataset):
         model = DCA(d=3, T=20, chunk_cov_estimate=10)
         model.fit(X)
 
+    model = DCA(d=3, T=20, chunk_cov_estimate=2)
+    model.fit(X)
+
 
 def test_init(noise_dataset):
     X = noise_dataset

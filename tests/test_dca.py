@@ -37,6 +37,21 @@ def test_DCA(noise_dataset):
     model.fit(X)
 
 
+def test_DCA_short(noise_dataset):
+    """Test that a DCA model raises an error when T would break chunking.
+    """
+    X = noise_dataset
+    model = DCA(d=3, T=20)
+    model.fit(X)
+
+    with pytest.raises(ValueError):
+        model = DCA(d=3, T=20, chunk_cov_estimate=10)
+        model.fit(X)
+
+    model = DCA(d=3, T=20, chunk_cov_estimate=2)
+    model.fit(X)
+
+
 def test_init(noise_dataset):
     X = noise_dataset
     model = DCA(d=3, T=10, init='random')

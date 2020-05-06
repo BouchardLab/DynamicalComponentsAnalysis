@@ -94,8 +94,8 @@ def calc_chunked_cov(X, T, stride, chunks, cov_est=None):
     if cov_est is None:
         cov_est = 0.
     n_samples = 0
-    if X.shape[0] <= T * chunks:
-        raise ValueError
+    if X.shape[0] < T * chunks:
+        raise ValueError('Time series is too short to chunk for cov estimation.')
     ends = np.linspace(0, X.shape[0], chunks + 1, dtype=int)[1:]
     start = 0
     for chunk in range(chunks):

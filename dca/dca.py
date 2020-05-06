@@ -200,6 +200,11 @@ class DynamicalComponentsAnalysis(object):
     block_toeplitz : bool
         If True, uses the block-Toeplitz logdet algorithm which is typically faster and less
         memory intensive on cpu for T>~10.
+    chunk_cov_estimate : int or None
+        If `None`, cov is estimated from entire time series. If an `int`, cov is estimated
+        by chunking up time series and averaging covariances from chucks. This can use less memory
+        and be faster for long timeseries. Requires that the length of the shortest timeseries
+        in the batch is longer than `2 * T * chunk_cov_estimate`.
     device : str
         What device to run the computation on in Pytorch.
     dtype : pytorch.dtype
@@ -207,7 +212,7 @@ class DynamicalComponentsAnalysis(object):
     """
     def __init__(self, d=None, T=None, init="random_ortho", n_init=1, tol=1e-6,
                  ortho_lambda=10., verbose=False, use_scipy=True, block_toeplitz=None,
-                 device="cpu", dtype=torch.float64, rng_or_seed=None):
+                 chunk_cov_estimate=None, device="cpu", dtype=torch.float64, rng_or_seed=None):
         self.d = d
         self.T = T
         self.init = init
@@ -228,6 +233,7 @@ class DynamicalComponentsAnalysis(object):
                 self.block_toeplitz = False
         else:
             self.block_toeplitz = block_toeplitz
+        self.chunk_cov_estimate = chunk_cov_estimate
         self.cross_covs = None
         if rng_or_seed is None:
             self.rng = np.random
@@ -256,7 +262,7 @@ class DynamicalComponentsAnalysis(object):
             self.T = T
 
         cross_covs = calc_cross_cov_mats_from_data(X, 2 * self.T,
-                                                   chunks=10,
+                                                   chunks=self.chunk_cov_estimate,
                                                    regularization=regularization,
                                                    reg_ops=reg_ops)
         self.cross_covs = torch.tensor(cross_covs, device=self.device, dtype=self.dtype)

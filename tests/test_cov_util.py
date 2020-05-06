@@ -49,7 +49,7 @@ def test_cross_cov_mats_from_data_chunks_2d():
     cov = cov.T.dot(cov) + np.eye(10)
     X = np.random.multivariate_normal(np.zeros(10), cov, size=10000)
     ccms = calc_cross_cov_mats_from_data(X, 3, chunks=10)
-    ccms2 = calc_cross_cov_mats_from_data(X, 3, chunks=1)
+    ccms2 = calc_cross_cov_mats_from_data(X, 3)
     assert_allclose(ccms, ccms2, rtol=1e-2)
 
 
@@ -61,7 +61,7 @@ def test_cross_cov_mats_from_data_chunks_3d():
     cov = cov.T.dot(cov) + np.eye(10)
     X = np.random.multivariate_normal(np.zeros(10), cov, size=10000)
     ccms = calc_cross_cov_mats_from_data(X, 3, chunks=10)
-    ccms2 = calc_cross_cov_mats_from_data(X, 3, chunks=1)
+    ccms2 = calc_cross_cov_mats_from_data(X, 3)
     assert_allclose(ccms, ccms2, rtol=1e-2)
 
 

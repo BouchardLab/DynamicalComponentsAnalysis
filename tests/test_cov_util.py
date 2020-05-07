@@ -29,6 +29,17 @@ def lorenz_dataset():
     return T, d, X, ccms, ccov
 
 
+def test_T_too_large():
+    """Test that an error is raised when T is too large.
+    """
+    X = np.random.randn(100, 5)
+    T = 99
+    calc_cross_cov_mats_from_data(X, T)
+    T = 100
+    with pytest.raises(ValueError):
+        calc_cross_cov_mats_from_data(X, T)
+
+
 def test_cross_cov_round_trip():
     """Tests whether going from a cov to cross_cov_mats and back works.
     """

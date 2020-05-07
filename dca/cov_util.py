@@ -107,7 +107,7 @@ def calc_chunked_cov(X, T, stride, chunks, cov_est=None):
     return cov_est, n_samples
 
 
-def calc_cross_cov_mats_from_data(X, T, chunks=None, regularization=None, reg_ops=None):
+def calc_cross_cov_mats_from_data(X, T, mean=None, chunks=None, regularization=None, reg_ops=None):
     """Compute a N-by-N cross-covariance matrix, where N is the data dimensionality,
     for each time lag up to T-1.
 
@@ -138,7 +138,13 @@ def calc_cross_cov_mats_from_data(X, T, chunks=None, regularization=None, reg_op
         raise NotImplementedError
 
     if isinstance(X, list) or X.ndim == 3:
-        mean = np.concatenate(X).mean(axis=0, keepdims=True)
+        for Xi in X:
+            if len(Xi) <= T:
+                raise ValueError('T must be shorter or equal to the length of the shortest ' +
+                                 'timeseries. If you are using the DCA model, 2 * DCA.T must be ' +
+                                 'shorter than the shortest timeseries.')
+        if mean is None:
+            mean = np.concatenate(X).mean(axis=0, keepdims=True)
         X = [Xi - mean for Xi in X]
         N = X[0].shape[-1]
         if chunks is None:
@@ -152,7 +158,13 @@ def calc_cross_cov_mats_from_data(X, T, chunks=None, regularization=None, reg_op
             cov_est /= (n_samples - 1.)
             cov_est = toeplitzify(cov_est, T, N)
     else:
-        X = X - X.mean(axis=0, keepdims=True)
+        if len(X) <= T:
+            raise ValueError('T must be shorter than the length of the shortest ' +
+                             'timeseries. If you are using the DCA model, 2 * DCA.T must be ' +
+                             'shorter than the shortest timeseries.')
+        if mean is None:
+            mean = X.mean(axis=0, keepdims=True)
+        X = X - mean
         N = X.shape[-1]
         if chunks is None:
             X_with_lags = form_lag_matrix(X, T, stride=stride)

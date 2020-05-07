@@ -175,15 +175,17 @@ class DynamicalComponentsAnalysis(object):
     """Dynamical Components Analysis.
 
     Runs DCA on multidimensional timeseries data X to discover a projection
-    onto a d-dimensional subspace which maximizes the complexity of the d-dimensional
-    dynamics.
+    onto a d-dimensional subspace which maximizes the complexity, as defined by the Gaussian
+    Predictive Information (PI) of the d-dimensional dynamics over windows of length T.
 
     Parameters
     ----------
     d : int
         Number of basis vectors onto which the data X are projected.
     T : int
-        Size of time windows across which to compute mutual information.
+        Size of time windows across which to compute mutual information. Total window length will be
+        `2 * T`. When fitting a model, the length of the shortest timeseries must be greater than
+        `2 * T` and for good performance should be much greater than `2 * T`.
     init : str
         Options: "random_ortho", "random", or "PCA"
         Method for initializing the projection matrix.
@@ -199,8 +201,8 @@ class DynamicalComponentsAnalysis(object):
         Whether to use SciPy or Pytorch L-BFGS-B. Default is True. Pytorch is not well tested.
     block_toeplitz : bool
         If True, uses the block-Toeplitz logdet algorithm which is typically faster and less
-        memory intensive on cpu for T>~10.
-    chunk_cov_estimate : int or None
+        memory intensive on cpu for `T >~ 10` and `d >~ 40`.
+    chunk_cov_estimate : None or int
         If `None`, cov is estimated from entire time series. If an `int`, cov is estimated
         by chunking up time series and averaging covariances from chucks. This can use less memory
         and be faster for long timeseries. Requires that the length of the shortest timeseries
@@ -210,7 +212,7 @@ class DynamicalComponentsAnalysis(object):
     dtype : pytorch.dtype
         What dtype to use for computation.
     """
-    def __init__(self, d=None, T=None, init="random_ortho", n_init=1, tol=1e-6,
+    def __init__(self, d=None, T=None, one_mean=True, init="random_ortho", n_init=1, tol=1e-6,
                  ortho_lambda=10., verbose=False, use_scipy=True, block_toeplitz=None,
                  chunk_cov_estimate=None, device="cpu", dtype=torch.float64, rng_or_seed=None):
         self.d = d
@@ -225,7 +227,7 @@ class DynamicalComponentsAnalysis(object):
         self.use_scipy = use_scipy
         if block_toeplitz is None:
             try:
-                if d > 40 and T > 8:
+                if d > 40 and T > 10:
                     self.block_toeplitz = True
                 else:
                     self.block_toeplitz = False
@@ -235,6 +237,8 @@ class DynamicalComponentsAnalysis(object):
             self.block_toeplitz = block_toeplitz
         self.chunk_cov_estimate = chunk_cov_estimate
         self.cross_covs = None
+        self.coef_ = None
+        self.mean_ = None
         if rng_or_seed is None:
             self.rng = np.random
         elif isinstance(rng_or_seed, np.random.RandomState):
@@ -260,8 +264,12 @@ class DynamicalComponentsAnalysis(object):
             T = self.T
         else:
             self.T = T
+        if isinstance(X, list) or X.ndim == 3:
+            self.mean_ = np.concatenate(X).mean(axis=0, keepdims=True)
+        else:
+            self.mean_ = X.mean(axis=0, keepdims=True)
 
-        cross_covs = calc_cross_cov_mats_from_data(X, 2 * self.T,
+        cross_covs = calc_cross_cov_mats_from_data(X, 2 * self.T, mean=self.mean_,
                                                    chunks=self.chunk_cov_estimate,
                                                    regularization=regularization,
                                                    reg_ops=reg_ops)
@@ -425,7 +433,8 @@ class DynamicalComponentsAnalysis(object):
         return self
 
     def transform(self, X):
-        """Project the data onto the DCA components.
+        """Project the data onto the DCA components after removing the training
+        mean.
 
         Parameters
         ----------
@@ -433,11 +442,11 @@ class DynamicalComponentsAnalysis(object):
             Data to estimate the cross covariance matrix.
         """
         if isinstance(X, list):
-            y = [(Xi - Xi.mean(axis=0, keepdims=True)).dot(self.coef_) for Xi in X]
+            y = [(Xi - self.mean_).dot(self.coef_) for Xi in X]
         elif X.ndim == 3:
-            y = np.stack([(Xi - Xi.mean(axis=0, keepdims=True)).dot(self.coef_) for Xi in X])
+            y = np.stack([(Xi - self.mean_).dot(self.coef_) for Xi in X])
         else:
-            y = (X - X.mean(axis=0, keepdims=True)).dot(self.coef_)
+            y = (X - self.mean_).dot(self.coef_)
         return y
 
     def fit_transform(self, X, d=None, T=None, regularization=None,

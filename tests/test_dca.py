@@ -1,4 +1,5 @@
 import numpy as np
+from numpy.testing import assert_allclose
 import pytest
 
 from dca import (DynamicalComponentsAnalysis as DCA,
@@ -18,6 +19,7 @@ def test_DCA(noise_dataset):
     X = noise_dataset
     model = DCA(d=3, T=10)
     model.fit(X)
+    assert_allclose(X.mean(axis=0, keepdims=True), model.mean_)
     model.transform(X)
     model.fit_transform(X)
     model.score()
@@ -67,6 +69,7 @@ def test_input_type():
 
     X = [np.random.randn(1000, 10) for ii in range(3)]
     model.fit(X)
+    assert_allclose(np.concatenate(X).mean(axis=0, keepdims=True), model.mean_)
     model.transform(X)
     model.fit_transform(X)
 

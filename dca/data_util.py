@@ -7,7 +7,7 @@ from scipy.ndimage import convolve1d
 from numpy.lib.stride_tricks import as_strided
 
 
-def form_lag_matrix(X, T, stride=1, stride_tricks=True):
+def form_lag_matrix(X, T, stride=1, stride_tricks=True, writeable=False):
     """Form the data matrix with `T` lags.
 
     Parameters
@@ -22,6 +22,10 @@ def form_lag_matrix(X, T, stride=1, stride_tricks=True):
         Whether to use numpy stride tricks to form the lagged matrix or create
         a new array. Using numpy stride tricks can can lower memory usage, especially for
         large `T`.
+    writeable : bool
+        For testing. You should not need to set this to True. This function uses stride tricks
+        to form the lag matrix which means writing to the array will have confusing behavior.
+        If stride_tricks is False, this flag does nothing.
 
     Returns
     -------
@@ -38,7 +42,7 @@ def form_lag_matrix(X, T, stride=1, stride_tricks=True):
         X = np.asarray(X, dtype=float, order='C')
         shape = (n_lagged_samples, N * T)
         strides = (X.strides[0] * stride,) + (X.strides[-1],)
-        X_with_lags = as_strided(X, shape=shape, strides=strides, writeable=False)
+        X_with_lags = as_strided(X, shape=shape, strides=strides, writeable=writeable)
     else:
         X_with_lags = np.zeros((n_lagged_samples, T * N))
         for i in range(n_lagged_samples):

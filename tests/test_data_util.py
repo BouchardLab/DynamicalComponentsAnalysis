@@ -44,7 +44,7 @@ def test_form_lag_matrix_copy():
 
     # X should be c-contiguous
     X = np.ones((1001, 3), dtype=float, order='C')
-    X0 = form_lag_matrix(X, T, stride_tricks=True)
+    X0 = form_lag_matrix(X, T, stride_tricks=True, writeable=True)
     X0 *= 0.
     assert_equal(X0, 0.)
 

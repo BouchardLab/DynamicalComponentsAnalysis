@@ -71,6 +71,7 @@ def test_cross_cov_mats_from_data_chunks_3d():
     cov = np.random.randn(10, 10)
     cov = cov.T.dot(cov) + np.eye(10)
     X = np.random.multivariate_normal(np.zeros(10), cov, size=10000)
+    X = X.reshape(2, 5000, -1)
     ccms = calc_cross_cov_mats_from_data(X, 3, chunks=10)
     ccms2 = calc_cross_cov_mats_from_data(X, 3)
     assert_allclose(ccms, ccms2, rtol=1e-2)

@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 from numpy.testing import assert_equal, assert_array_equal
 
@@ -46,3 +47,15 @@ def test_form_lag_matrix_copy():
     X0 = form_lag_matrix(X, T, stride_tricks=True)
     X0 *= 0.
     assert_equal(X0, 0.)
+
+
+def test_form_lag_matrix_errors():
+    """Test whether form_lag_matrix raises the correct errors for invalid
+    T or stride values.
+    """
+    X = np.random.randn(11, 3)
+
+    with pytest.raises(ValueError):
+        form_lag_matrix(X, 11)
+        form_lag_matrix(X, 3, stride=-1)
+        form_lag_matrix(X, 3, stride=.5)

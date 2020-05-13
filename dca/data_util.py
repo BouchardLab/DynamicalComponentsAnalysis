@@ -32,6 +32,8 @@ def form_lag_matrix(X, T, stride=1, stride_tricks=True):
         raise ValueError('stride should be an int and greater than or equal to 1.')
     N = X.shape[1]
     n_lagged_samples = (len(X) - T) // stride + 1
+    if n_lagged_samples < 1:
+        raise ValueError('T is too long for a timeseries of length {}.'.format(len(X)))
     if stride_tricks:
         X = np.asarray(X, dtype=float, order='C')
         shape = (n_lagged_samples, N * T)

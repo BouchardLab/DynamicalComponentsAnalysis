@@ -146,7 +146,7 @@ def calc_cross_cov_mats_from_data(X, T, mean=None, chunks=None, regularization=N
     if isinstance(X, list) or X.ndim == 3:
         for Xi in X:
             if len(Xi) <= T:
-                raise ValueError('T must be shorter or equal to the length of the shortest ' +
+                raise ValueError('T must be shorter than the length of the shortest ' +
                                  'timeseries. If you are using the DCA model, 2 * DCA.T must be ' +
                                  'shorter than the shortest timeseries.')
         if mean is None:

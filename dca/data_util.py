@@ -38,7 +38,7 @@ def form_lag_matrix(X, T, stride=1, stride_tricks=True):
         X = np.asarray(X, dtype=float, order='C')
         shape = (n_lagged_samples, N * T)
         strides = (X.strides[0] * stride,) + (X.strides[-1],)
-        X_with_lags = as_strided(X, shape=shape, strides=strides)
+        X_with_lags = as_strided(X, shape=shape, strides=strides, writeable=False)
     else:
         X_with_lags = np.zeros((n_lagged_samples, T * N))
         for i in range(n_lagged_samples):

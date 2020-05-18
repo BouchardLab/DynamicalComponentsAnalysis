@@ -1,3 +1,4 @@
+import logging, time
 import numpy as np
 import scipy.stats
 from scipy.optimize import minimize
@@ -222,6 +223,11 @@ class DynamicalComponentsAnalysis(object):
         self.tol = tol
         self.ortho_lambda = ortho_lambda
         self.verbose = verbose
+        self._logger = logging.getLogger('DCA')
+        if verbose:
+            self._logger.setLevel(logging.INFO)
+        else:
+            self._logger.setLevel(logging.WARNING)
         self.device = device
         self.dtype = dtype
         self.use_scipy = use_scipy
@@ -264,6 +270,8 @@ class DynamicalComponentsAnalysis(object):
             T = self.T
         else:
             self.T = T
+        start = time.time()
+        self._logger.info('Starting cross covariance estimate.')
         if isinstance(X, list) or X.ndim == 3:
             self.mean_ = np.concatenate(X).mean(axis=0, keepdims=True)
         else:
@@ -274,6 +282,8 @@ class DynamicalComponentsAnalysis(object):
                                                    regularization=regularization,
                                                    reg_ops=reg_ops)
         self.cross_covs = torch.tensor(cross_covs, device=self.device, dtype=self.dtype)
+        delta_time = round((time.time() - start) / 60., 1)
+        self._logger.info('Cross covariance estimate took {:0.1f} minutes.'.format(delta_time))
 
         return self
 
@@ -292,7 +302,13 @@ class DynamicalComponentsAnalysis(object):
         pis = []
         coefs = []
         for ii in range(n_init):
+            start = time.time()
+            self._logger.info('Starting projection fig {} of {}.'.format(ii + 1, n_init))
             coef, pi = self._fit_projection(d=d)
+            delta_time = round((time.time() - start) / 60., 1)
+            self._logger.info('Projection fit {} of {} took {:0.1f} minutes.'.format(ii + 1,
+                                                                                     n_init,
+                                                                                     delta_time))
             pis.append(pi)
             coefs.append(coef)
         idx = np.argmax(pis)

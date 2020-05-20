@@ -12,3 +12,4 @@ API
     dca/cov_util
     dca/synth_data
     dca/analysis
+    dca/data_util

@@ -21,11 +21,11 @@ def form_lag_matrix(X, T, stride=1, stride_tricks=True, writeable=False):
     stride_tricks : bool
         Whether to use numpy stride tricks to form the lagged matrix or create
         a new array. Using numpy stride tricks can can lower memory usage, especially for
-        large `T`.
+        large `T`. If `False`, a new array is created.
     writeable : bool
         For testing. You should not need to set this to True. This function uses stride tricks
         to form the lag matrix which means writing to the array will have confusing behavior.
-        If stride_tricks is False, this flag does nothing.
+        If `stride_tricks` is `False`, this flag does nothing.
 
     Returns
     -------

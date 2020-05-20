@@ -427,10 +427,10 @@ def calc_pi_from_cross_cov_mats(cross_cov_mats, proj=None):
     return PI
 
 
-def calc_pi_from_cross_cov_mats_block_toeplitz(cross_cov_mats, proj=None):
-    """Calculates predictive information for a spatiotemporal Gaussian
-    process with T-1 N-by-N cross-covariance matrices using the block-Toeplitz
-    algorithm.
+def calc_block_toeplitz_logdets(cross_cov_mats, proj=None):
+    """Calculates logdets which can be used to calculate predictive information or entropy
+    for a spatiotemporal Gaussian process with T-1 N-by-N cross-covariance matrices using
+    the block-Toeplitz algorithm.
 
     Based on:
     Sowell, Fallaw. "A decomposition of block toeplitz matrices with applications
@@ -449,8 +449,8 @@ def calc_pi_from_cross_cov_mats_block_toeplitz(cross_cov_mats, proj=None):
 
     Returns
     -------
-    PI : float
-        Mutual information in nats.
+    lodgets : list
+        T logdets.
     """
     use_torch = isinstance(cross_cov_mats, torch.Tensor)
     if proj is not None:
@@ -492,7 +492,6 @@ def calc_pi_from_cross_cov_mats_block_toeplitz(cross_cov_mats, proj=None):
                 cs = ccms[1: ii + 1]
             vb.append(ccms[0] - torch.matmul(Abs, cs).sum(dim=0))
         logdets = [torch.slogdet(vb[ii])[1] for ii in range(T)]
-        return sum(logdets[:T // 2]) - 0.5 * sum(logdets)
     else:
         vb = np.zeros((T, d, d))
         v = ccms[0]
@@ -514,7 +513,37 @@ def calc_pi_from_cross_cov_mats_block_toeplitz(cross_cov_mats, proj=None):
                 v = ccms[0] - sum([A[(ii - 1, jj - 1)].dot(ccms[jj].T) for jj in range(1, ii + 1)])
             vb[ii] = ccms[0] - sum([Ab[(ii - 1, jj - 1)].dot(ccms[jj]) for jj in range(1, ii + 1)])
         logdets = [np.linalg.slogdet(vb[ii])[1] for ii in range(T)]
-        return sum(logdets[:T // 2]) - 0.5 * sum(logdets)
+    return logdets
+
+
+def calc_pi_from_cross_cov_mats_block_toeplitz(cross_cov_mats, proj=None):
+    """Calculates predictive information for a spatiotemporal Gaussian
+    process with T-1 N-by-N cross-covariance matrices using the block-Toeplitz
+    algorithm.
+
+    Based on:
+    Sowell, Fallaw. "A decomposition of block toeplitz matrices with applications
+    to vector time series." 1989a). Unpublished manuscript (1989).
+
+    Parameters
+    ----------
+    cross_cov_mats : np.ndarray, shape (T, N, N)
+        Cross-covariance matrices: cross_cov_mats[dt] is the
+        cross-covariance between X(t) and X(t+dt), where each
+        of X(t) and X(t+dt) is a N-dimensional vector.
+    proj: np.ndarray, shape (N, d), optional
+        If provided, the N-dimensional data are projected onto a d-dimensional
+        basis given by the columns of proj. Then, the mutual information is
+        computed for this d-dimensional timeseries.
+
+    Returns
+    -------
+    PI : float
+        Mutual information in nats.
+    """
+    T = cross_cov_mats.shape[0]
+    logdets = calc_block_toeplitz_logdets(cross_cov_mats, proj)
+    return sum(logdets[:T // 2]) - 0.5 * sum(logdets)
 
 
 """

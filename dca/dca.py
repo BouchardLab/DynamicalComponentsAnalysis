@@ -100,6 +100,7 @@ class ObjectiveWrapper(object):
         self.f_params = f_params
         self.n_f = 0
         self.n_g = 0
+        self.n_c = 0
 
     def core_computations(self, *args, **kwargs):
         """Calculate the part of the computation that is common to computing
@@ -112,6 +113,7 @@ class ObjectiveWrapper(object):
         """
         params = args[0]
         if not np.array_equal(params, self.params):
+            self.n_c += 1
             self.common_computations = self.f_params(*args, **kwargs)
             self.params = params.copy()
         return self.common_computations

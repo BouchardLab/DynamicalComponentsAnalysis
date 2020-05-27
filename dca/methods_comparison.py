@@ -810,7 +810,7 @@ class JPCA(object):
             SciPy optimization result.
         """
         def objective(x, X_prestate, dX):
-            f = np.linalg.norm(dX - X_prestate@self._vec2mat(x))
+            f = np.linalg.norm(dX - X_prestate @ self._vec2mat(x))
             return f**2
 
         def derivative(x, X_prestate, dX):

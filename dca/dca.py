@@ -18,6 +18,9 @@ __all__ = ['DynamicalComponentsAnalysis',
            'init_coef']
 
 
+logging.basicConfig()
+
+
 def ortho_reg_fn(V, ortho_lambda):
     """Regularization term which encourages the basis vectors in the
     columns of V to be orthonormal.
@@ -97,8 +100,9 @@ class ObjectiveWrapper(object):
         self.f_params = f_params
         self.n_f = 0
         self.n_g = 0
+        self.n_c = 0
 
-    def core_computations(self, *args):
+    def core_computations(self, *args, **kwargs):
         """Calculate the part of the computation that is common to computing
         the loss and the gradient.
 
@@ -109,7 +113,8 @@ class ObjectiveWrapper(object):
         """
         params = args[0]
         if not np.array_equal(params, self.params):
-            self.common_computations = self.f_params(*args)
+            self.n_c += 1
+            self.common_computations = self.f_params(*args, **kwargs)
             self.params = params.copy()
         return self.common_computations
 
@@ -213,7 +218,7 @@ class DynamicalComponentsAnalysis(object):
     dtype : pytorch.dtype
         What dtype to use for computation.
     """
-    def __init__(self, d=None, T=None, one_mean=True, init="random_ortho", n_init=1, tol=1e-6,
+    def __init__(self, d=None, T=None, init="random_ortho", n_init=1, tol=1e-6,
                  ortho_lambda=10., verbose=False, use_scipy=True, block_toeplitz=None,
                  chunk_cov_estimate=None, device="cpu", dtype=torch.float64, rng_or_seed=None):
         self.d = d
@@ -225,7 +230,7 @@ class DynamicalComponentsAnalysis(object):
         self.verbose = verbose
         self._logger = logging.getLogger('DCA')
         if verbose:
-            self._logger.setLevel(logging.INFO)
+            self._logger.setLevel(logging.DEBUG)
         else:
             self._logger.setLevel(logging.WARNING)
         self.device = device
@@ -341,61 +346,49 @@ class DynamicalComponentsAnalysis(object):
             c = torch.tensor(c, device=self.device, dtype=self.dtype)
 
         if self.use_scipy:
-            if self.verbose or record_V:
-                if record_V:
-                    self.V_seq = [V_init]
 
-                def callback(v_flat):
-                    v_flat_torch = torch.tensor(v_flat,
-                                                requires_grad=True,
-                                                device=self.device,
-                                                dtype=self.dtype)
-                    v_torch = v_flat_torch.reshape(N, d)
-                    loss = build_loss(c, d, self.ortho_lambda, self.block_toeplitz)(v_torch)
-                    reg_val = ortho_reg_fn(v_torch, self.ortho_lambda)
-                    loss = loss.detach().cpu().numpy()
-                    reg_val = reg_val.detach().cpu().numpy()
-                    PI = -(loss - reg_val)
-                    if record_V:
-                        self.V_seq.append(v_flat.reshape(N, d))
-                    if self.verbose:
-                        string = "Loss {}, PI: {} nats, reg: {}"
-                        print(string.format(str(np.round(loss, 4)),
-                                            str(np.round(PI, 4)),
-                                            str(np.round(reg_val, 4))))
-
-                callback(V_init)
-            else:
-                callback = None
-
-            """
-            def f_df(v_flat):
+            def f_params(v_flat, requires_grad=True):
                 v_flat_torch = torch.tensor(v_flat,
-                                            requires_grad=True,
-                                            device=self.device,
-                                            dtype=self.dtype)
-                v_torch = v_flat_torch.reshape(N, d)
-                loss = build_loss(c, d, self.ortho_lambda, self.block_toeplitz)(v_torch)
-                loss.backward()
-                grad = v_flat_torch.grad
-                return (loss.detach().cpu().numpy().astype(float),
-                        grad.detach().cpu().numpy().astype(float))
-            opt = minimize(f_df, V_init.ravel(), method='L-BFGS-B', jac=True,
-                           options={'disp': self.verbose, 'ftol': self.tol},
-                           callback=callback)
-            """
-            def f_params(v_flat):
-                v_flat_torch = torch.tensor(v_flat,
-                                            requires_grad=True,
+                                            requires_grad=requires_grad,
                                             device=self.device,
                                             dtype=self.dtype)
                 v_torch = v_flat_torch.reshape(N, d)
                 loss = build_loss(c, d, self.ortho_lambda, self.block_toeplitz)(v_torch)
                 return loss, v_flat_torch
             objective = ObjectiveWrapper(f_params)
+
+            def null_callback(*args, **kwargs):
+                pass
+
+            if self.verbose or record_V:
+                if record_V:
+                    self.V_seq = [V_init]
+
+                def callback(v_flat, objective):
+                    if record_V:
+                        self.V_seq.append(v_flat.reshape(N, d))
+                    if self.verbose:
+                        loss, v_flat_torch = objective.core_computations(v_flat,
+                                                                         requires_grad=False)
+                        v_torch = v_flat_torch.reshape(N, d)
+                        loss = build_loss(c, d, self.ortho_lambda, self.block_toeplitz)(v_torch)
+                        loss = build_loss(c, d, self.ortho_lambda, self.block_toeplitz)(v_torch)
+                        reg_val = ortho_reg_fn(v_torch, self.ortho_lambda)
+                        loss = loss.detach().cpu().numpy()
+                        reg_val = reg_val.detach().cpu().numpy()
+                        PI = -(loss - reg_val)
+                        string = "Loss {}, PI: {} nats, reg: {}"
+                        self._logger.info(string.format(str(np.round(loss, 4)),
+                                                        str(np.round(PI, 4)),
+                                                        str(np.round(reg_val, 4))))
+
+                callback(V_init, objective)
+            else:
+                callback = null_callback
+
             opt = minimize(objective.func, V_init.ravel(), method='L-BFGS-B', jac=objective.grad,
                            options={'disp': self.verbose, 'ftol': self.tol},
-                           callback=callback)
+                           callback=lambda x: callback(x, objective))
             v = opt.x.reshape(N, d)
         else:
             optimizer = torch.optim.LBFGS([v], max_eval=15000, max_iter=15000,

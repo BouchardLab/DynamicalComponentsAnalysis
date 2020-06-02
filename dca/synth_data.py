@@ -321,7 +321,7 @@ def median_subspace(N, D, rng, num_samples=5000, V_0=None):
 
 def embedded_lorenz_cross_cov_mats(N, T, snr=1., noise_dim=7, return_samples=False,
                                    num_lorenz_samples=10000, num_subspace_samples=5000,
-                                   seed=20200326):
+                                   V_dynamics=None, V_noise=None, X_dynamics=None, seed=20200326):
     """Embed the Lorenz system into high dimensions with additive spatially
     structued white noise. Signal and noise subspaces are oriented with the
     median subspace angle.
@@ -351,22 +351,25 @@ def embedded_lorenz_cross_cov_mats(N, T, snr=1., noise_dim=7, return_samples=Fal
 
     rng = np.random.RandomState(seed)
     # Generate Lorenz dynamics
-    X_dynamics = gen_lorenz_data(num_lorenz_samples)
+    if X_dynamics is None:
+        X_dynamics = gen_lorenz_data(num_lorenz_samples)
     dynamics_var = np.max(scipy.linalg.eigvalsh(np.cov(X_dynamics.T)))
     noise_var = dynamics_var / snr
     # Generate dynamics embedding matrix (will remain fixed)
-    if N == 3:
-        V_dynamics = np.eye(3)
-    else:
-        V_dynamics = random_basis(N, 3, rng)
+    if V_dynamics is None:
+        if N == 3:
+            V_dynamics = np.eye(3)
+        else:
+            V_dynamics = random_basis(N, 3, rng)
     if noise_dim == np.inf:
         noise_cov = np.eye(N) * noise_var
     else:
         # Generate a subspace with median principal angles w.r.t. dynamics subspace
-        V_noise = median_subspace(N, noise_dim, rng, num_samples=num_subspace_samples,
-                                  V_0=V_dynamics)
+        if V_noise is None:
+            V_noise = median_subspace(N, noise_dim, rng, num_samples=num_subspace_samples,
+                                      V_0=V_dynamics)
         # Extend V_noise to a basis for R^N
-        if noise_dim < N:
+        if V_noise.shape[1] < N:
             V_noise_comp = scipy.linalg.orth(np.eye(N) - np.dot(V_noise, V_noise.T))
             V_noise = np.concatenate((V_noise, V_noise_comp), axis=1)
         # Add noise covariance

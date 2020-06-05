@@ -37,4 +37,4 @@ The 4 datasets used in the DCA paper can be found in the following locations
 * [M1](https://zenodo.org/record/583331) - We used indy_20160627_01.mat
 * [HC](https://github.com/KordingLab/Neural_Decoding) - See link to the datasets in the README
 * [Temperature](https://www.kaggle.com/selfishgene/historical-hourly-weather-data?select=temperature.csv) - We used the 30 US cities from temperature.csv.
-* [Accelerometer](https://github.com/mmalekzadeh/motion-sense/tree/master/data) - We used sub_19.csv from A_DeviceMotion_data.zip
+* [Accelerometer](https://github.com/mmalekzadeh/motion-sense/tree/master/data) - We used std_6/sub_19.csv from A_DeviceMotion_data.zip

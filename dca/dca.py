@@ -222,7 +222,9 @@ class DynamicalComponentsAnalysis(object):
                  ortho_lambda=10., verbose=False, use_scipy=True, block_toeplitz=None,
                  chunk_cov_estimate=None, device="cpu", dtype=torch.float64, rng_or_seed=None):
         self.d = d
+        self.d_fit = None
         self.T = T
+        self.T_fit = None
         self.init = init
         self.n_init = n_init
         self.tol = tol
@@ -292,7 +294,7 @@ class DynamicalComponentsAnalysis(object):
 
         return self
 
-    def fit_projection(self, d=None, n_init=None):
+    def fit_projection(self, d=None, T=None, n_init=None):
         """Fit the projection matrix.
 
         Parameters
@@ -309,7 +311,7 @@ class DynamicalComponentsAnalysis(object):
         for ii in range(n_init):
             start = time.time()
             self._logger.info('Starting projection fig {} of {}.'.format(ii + 1, n_init))
-            coef, pi = self._fit_projection(d=d)
+            coef, pi = self._fit_projection(d=d, T=T)
             delta_time = round((time.time() - start) / 60., 1)
             self._logger.info('Projection fit {} of {} took {:0.1f} minutes.'.format(ii + 1,
                                                                                      n_init,
@@ -319,7 +321,7 @@ class DynamicalComponentsAnalysis(object):
         idx = np.argmax(pis)
         self.coef_ = coefs[idx]
 
-    def _fit_projection(self, d=None, record_V=False):
+    def _fit_projection(self, d=None, T=None, record_V=False):
         """Fit the projection matrix.
 
         Parameters
@@ -333,15 +335,23 @@ class DynamicalComponentsAnalysis(object):
             d = self.d
         if d < 1:
             raise ValueError
+        self.d_fit = d
+        if T is None:
+            T = self.T
+        if (2 * T) > self.cross_covs.shape[0]:
+            raise ValueError('T must less than or equal to the value when ' +
+                             '`estimate_cross_covariance` was called.')
+        self.T_fit = T
+
         if self.cross_covs is None:
             raise ValueError('Call estimate_cross_covariance() first.')
 
-        N = self.cross_covs.shape[1]
+        c = self.cross_covs[:2 * T]
+        N = c.shape[1]
         V_init = init_coef(N, d, self.rng, self.init)
         v = torch.tensor(V_init, requires_grad=True,
                          device=self.device, dtype=self.dtype)
 
-        c = self.cross_covs
         if not isinstance(c, torch.Tensor):
             c = torch.tensor(c, device=self.device, dtype=self.dtype)
 

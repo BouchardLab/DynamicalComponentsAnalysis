@@ -338,6 +338,9 @@ class DynamicalComponentsAnalysis(object):
         self.d_fit = d
         if T is None:
             T = self.T
+        if (2 * T) > self.cross_covs.shape[0]:
+            raise ValueError('T must less than or equal to the value when ' +
+                             '`estimate_cross_covariance` was called.')
         self.T_fit = T
 
         if self.cross_covs is None:

@@ -47,8 +47,10 @@ def test_DCA_variable_d(noise_dataset):
     model.estimate_cross_covariance(X)
     model.fit_projection()
     assert model.coef_.shape[1] == 3
+    assert model.d_fit == 3
     model.fit_projection(d=2)
     assert model.coef_.shape[1] == 2
+    assert model.d_fit == 2
 
 
 def test_DCA_variable_T(noise_dataset):
@@ -59,15 +61,19 @@ def test_DCA_variable_T(noise_dataset):
     model.estimate_cross_covariance(X)
     model.rng = np.random.RandomState(0)
     model.fit_projection()
+    assert model.T_fit == 10
     c0 = model.coef_.copy()
     model.rng = np.random.RandomState(0)
     model.fit_projection()
     c1 = model.coef_.copy()
     model.rng = np.random.RandomState(0)
     model.fit_projection(T=5)
+    assert model.T_fit == 5
     c2 = model.coef_.copy()
     assert_allclose(c0, c1)
     assert not np.allclose(c0, c2)
+    with pytest.raises(ValueError):
+        model.fit_projection(T=11)
 
 
 def test_DCA_short(noise_dataset):

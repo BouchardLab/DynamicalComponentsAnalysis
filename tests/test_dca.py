@@ -39,6 +39,37 @@ def test_DCA(noise_dataset):
     model.fit(X)
 
 
+def test_DCA_variable_d(noise_dataset):
+    """Test that the DCA projection can be refit with different d.
+    """
+    X = noise_dataset
+    model = DCA(d=3, T=10)
+    model.estimate_cross_covariance(X)
+    model.fit_projection()
+    assert model.coef_.shape[1] == 3
+    model.fit_projection(d=2)
+    assert model.coef_.shape[1] == 2
+
+
+def test_DCA_variable_T(noise_dataset):
+    """Test that the DCA projection can be refit with different d.
+    """
+    X = noise_dataset
+    model = DCA(d=3, T=10)
+    model.estimate_cross_covariance(X)
+    model.rng = np.random.RandomState(0)
+    model.fit_projection()
+    c0 = model.coef_.copy()
+    model.rng = np.random.RandomState(0)
+    model.fit_projection()
+    c1 = model.coef_.copy()
+    model.rng = np.random.RandomState(0)
+    model.fit_projection(T=5)
+    c2 = model.coef_.copy()
+    assert_allclose(c0, c1)
+    assert not np.allclose(c0, c2)
+
+
 def test_DCA_short(noise_dataset):
     """Test that a DCA model raises an error when T would break chunking.
     """

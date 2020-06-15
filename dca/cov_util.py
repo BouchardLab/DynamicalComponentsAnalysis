@@ -3,9 +3,52 @@ import scipy as sp
 import collections
 import torch
 import functools
+from numpy.lib.stride_tricks import as_strided
 
-from .data_util import form_lag_matrix
 from sklearn.utils.extmath import randomized_svd
+
+
+def form_lag_matrix(X, T, stride=1, stride_tricks=True, writeable=False):
+    """Form the data matrix with `T` lags.
+
+    Parameters
+    ----------
+    X : ndarray (n_time, N)
+        Timeseries with no lags.
+    T : int
+        Number of lags.
+    stride : int
+        Number of original samples to move between lagged samples.
+    stride_tricks : bool
+        Whether to use numpy stride tricks to form the lagged matrix or create
+        a new array. Using numpy stride tricks can can lower memory usage, especially for
+        large `T`. If `False`, a new array is created.
+    writeable : bool
+        For testing. You should not need to set this to True. This function uses stride tricks
+        to form the lag matrix which means writing to the array will have confusing behavior.
+        If `stride_tricks` is `False`, this flag does nothing.
+
+    Returns
+    -------
+    X_with_lags : ndarray (n_lagged_time, N * T)
+        Timeseries with lags.
+    """
+    if not isinstance(stride, int) or stride < 1:
+        raise ValueError('stride should be an int and greater than or equal to 1.')
+    N = X.shape[1]
+    n_lagged_samples = (len(X) - T) // stride + 1
+    if n_lagged_samples < 1:
+        raise ValueError('T is too long for a timeseries of length {}.'.format(len(X)))
+    if stride_tricks:
+        X = np.asarray(X, dtype=float, order='C')
+        shape = (n_lagged_samples, N * T)
+        strides = (X.strides[0] * stride,) + (X.strides[-1],)
+        X_with_lags = as_strided(X, shape=shape, strides=strides, writeable=writeable)
+    else:
+        X_with_lags = np.zeros((n_lagged_samples, T * N))
+        for i in range(n_lagged_samples):
+            X_with_lags[i, :] = X[i * stride:i * stride + T, :].flatten()
+    return X_with_lags
 
 
 def rectify_spectrum(cov, epsilon=1e-6, verbose=False):
@@ -299,15 +342,15 @@ def calc_cov_from_cross_cov_mats(cross_cov_mats):
     return cov
 
 
-def calc_pi_from_data(X, T):
-    """Calculates the mutual information ("predictive information"
-    or "PI") between variables  {1,...,T_pi} and {T_pi+1,...,2*T_pi}, which
-    are jointly Gaussian with covariance matrix cov_2_T_pi.
+def calc_pi_from_data(X, T, proj=None):
+    """Calculates the Gaussian Predictive Information between variables
+    {1,...,T_pi} and {T_pi+1,...,2*T_pi}..
 
     Parameters
     ----------
-    cov_2_T_pi : np.ndarray, shape (2*T_pi, 2*T_pi)
-        Covariance matrix.
+    T : int
+        This T should be 2 * T_pi. This T sets the joint window length not the
+        past or future window length.
 
     Returns
     -------
@@ -316,13 +359,12 @@ def calc_pi_from_data(X, T):
     """
     ccms = calc_cross_cov_mats_from_data(X, T)
 
-    return calc_pi_from_cross_cov_mats(ccms)
+    return calc_pi_from_cross_cov_mats(ccms, proj=proj)
 
 
 def calc_pi_from_cov(cov_2_T_pi):
-    """Calculates the mutual information ("predictive information"
-    or "PI") between variables  {1,...,T_pi} and {T_pi+1,...,2*T_pi}, which
-    are jointly Gaussian with covariance matrix cov_2_T_pi.
+    """Calculates the Gaussian Predictive Information between variables
+    {1,...,T_pi} and {T_pi+1,...,2*T_pi} with covariance matrix cov_2_T_pi.
 
     Parameters
     ----------

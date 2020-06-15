@@ -4,50 +4,8 @@ import pandas as pd
 from scipy.interpolate import interp1d
 from scipy.signal import resample
 from scipy.ndimage import convolve1d
-from numpy.lib.stride_tricks import as_strided
 
-
-def form_lag_matrix(X, T, stride=1, stride_tricks=True, writeable=False):
-    """Form the data matrix with `T` lags.
-
-    Parameters
-    ----------
-    X : ndarray (n_time, N)
-        Timeseries with no lags.
-    T : int
-        Number of lags.
-    stride : int
-        Number of original samples to move between lagged samples.
-    stride_tricks : bool
-        Whether to use numpy stride tricks to form the lagged matrix or create
-        a new array. Using numpy stride tricks can can lower memory usage, especially for
-        large `T`. If `False`, a new array is created.
-    writeable : bool
-        For testing. You should not need to set this to True. This function uses stride tricks
-        to form the lag matrix which means writing to the array will have confusing behavior.
-        If `stride_tricks` is `False`, this flag does nothing.
-
-    Returns
-    -------
-    X_with_lags : ndarray (n_lagged_time, N * T)
-        Timeseries with lags.
-    """
-    if not isinstance(stride, int) or stride < 1:
-        raise ValueError('stride should be an int and greater than or equal to 1.')
-    N = X.shape[1]
-    n_lagged_samples = (len(X) - T) // stride + 1
-    if n_lagged_samples < 1:
-        raise ValueError('T is too long for a timeseries of length {}.'.format(len(X)))
-    if stride_tricks:
-        X = np.asarray(X, dtype=float, order='C')
-        shape = (n_lagged_samples, N * T)
-        strides = (X.strides[0] * stride,) + (X.strides[-1],)
-        X_with_lags = as_strided(X, shape=shape, strides=strides, writeable=writeable)
-    else:
-        X_with_lags = np.zeros((n_lagged_samples, T * N))
-        for i in range(n_lagged_samples):
-            X_with_lags[i, :] = X[i * stride:i * stride + T, :].flatten()
-    return X_with_lags
+from .cov_util import form_lag_matrix  # noqa:F401
 
 
 def sum_over_chunks(X, stride):

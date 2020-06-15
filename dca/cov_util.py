@@ -471,7 +471,7 @@ def calc_pi_from_cross_cov_mats(cross_cov_mats, proj=None):
 
 def calc_block_toeplitz_logdets(cross_cov_mats, proj=None):
     """Calculates logdets which can be used to calculate predictive information or entropy
-    for a spatiotemporal Gaussian process with T-1 N-by-N cross-covariance matrices using
+    for a spatiotemporal Gaussian process with T N-by-N cross-covariance matrices using
     the block-Toeplitz algorithm.
 
     Based on:

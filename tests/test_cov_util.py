@@ -3,6 +3,7 @@ from numpy.testing import assert_allclose
 import pytest
 import torch
 
+from dca import DynamicalComponentsAnalysis as DCA
 from dca.dca import init_coef
 from dca.data_util import form_lag_matrix
 from dca.synth_data import gen_lorenz_data
@@ -167,3 +168,17 @@ def test_regularize_cov(lorenz_dataset):
     X = X[:, :3]
     calc_cross_cov_mats_from_data(X, 5, regularization='kron',
                                   reg_ops={'num_folds': 3})
+
+
+def test_stride(lorenz_dataset):
+    _, _, X, _, _ = lorenz_dataset
+    X = X[:, :3]
+    model = DCA(T=1)
+    model.estimate_cross_covariance(X)
+    ccms1 = model.cross_covs.numpy()
+
+    model = DCA(T=1, stride=2)
+    model.estimate_cross_covariance(X)
+    ccms2 = model.cross_covs.numpy()
+    assert not np.allclose(ccms1, ccms2)
+    assert_allclose(ccms1, ccms2, atol=5e-2)

@@ -197,6 +197,10 @@ class DynamicalComponentsAnalysis(object):
         Method for initializing the projection matrix.
     n_init : int
         Number of random restarts. Default is 1.
+    stride : int
+        Number of samples to skip when estimating cross covariance matrices. Settings stride > 1
+        will speedup covariance estimation but may reduce the quality of the covariance estimate
+        for small datasets.
     tol : float
         Tolerance for stopping optimization. Default is 1e-6.
     ortho_lambda : float
@@ -217,8 +221,14 @@ class DynamicalComponentsAnalysis(object):
         What device to run the computation on in Pytorch.
     dtype : pytorch.dtype
         What dtype to use for computation.
+    rng_or_seed : None, int, or NumPy RandomState
+        Random number generator or seed.
+
+    Attributes
+    ----------
+
     """
-    def __init__(self, d=None, T=None, init="random_ortho", n_init=1, tol=1e-6,
+    def __init__(self, d=None, T=None, init="random_ortho", n_init=1, stride=1, tol=1e-6,
                  ortho_lambda=10., verbose=False, use_scipy=True, block_toeplitz=None,
                  chunk_cov_estimate=None, device="cpu", dtype=torch.float64, rng_or_seed=None):
         self.d = d
@@ -227,6 +237,7 @@ class DynamicalComponentsAnalysis(object):
         self.T_fit = None
         self.init = init
         self.n_init = n_init
+        self.stride = stride
         self.tol = tol
         self.ortho_lambda = ortho_lambda
         self.verbose = verbose
@@ -286,6 +297,7 @@ class DynamicalComponentsAnalysis(object):
 
         cross_covs = calc_cross_cov_mats_from_data(X, 2 * self.T, mean=self.mean_,
                                                    chunks=self.chunk_cov_estimate,
+                                                   stride=self.stride,
                                                    regularization=regularization,
                                                    reg_ops=reg_ops)
         self.cross_covs = torch.tensor(cross_covs, device=self.device, dtype=self.dtype)

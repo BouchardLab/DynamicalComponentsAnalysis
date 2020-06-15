@@ -108,7 +108,8 @@ def calc_chunked_cov(X, T, stride, chunks, cov_est=None, stride_tricks=True):
     return cov_est, n_samples
 
 
-def calc_cross_cov_mats_from_data(X, T, mean=None, chunks=None, regularization=None, reg_ops=None,
+def calc_cross_cov_mats_from_data(X, T, mean=None, chunks=None, stride=1,
+                                  regularization=None, reg_ops=None,
                                   stride_tricks=True):
     """Compute the N-by-N cross-covariance matrix, where N is the data dimensionality,
     for each time lag up to T-1.
@@ -139,7 +140,6 @@ def calc_cross_cov_mats_from_data(X, T, mean=None, chunks=None, regularization=N
     """
     if reg_ops is None:
         reg_ops = dict()
-    stride = reg_ops.get('stride', 1)
     if chunks is not None and regularization is not None:
         raise NotImplementedError
 

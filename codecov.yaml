@@ -4,3 +4,4 @@ ignore:
   - "dca/plotting.py"
   - "dca/style.py"
   - "dca/knn.py"
+  - "dca/data_util.py"

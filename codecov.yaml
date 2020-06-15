@@ -3,3 +3,4 @@ ignore:
   - "tests"
   - "dca/plotting.py"
   - "dca/style.py"
+  - "dca/knn.py"

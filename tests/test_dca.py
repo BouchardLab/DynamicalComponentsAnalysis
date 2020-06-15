@@ -3,8 +3,8 @@ from numpy.testing import assert_allclose
 import pytest
 
 from dca import (DynamicalComponentsAnalysis as DCA,
-                 DynamicalComponentsAnalysisFFT as DCAFFT,
-                 DynamicalComponentsAnalysisKNN as DCAKNN)
+                 DynamicalComponentsAnalysisFFT as DCAFFT)
+from dca.knn import DynamicalComponentsAnalysisKNN as DCAKNN
 
 
 @pytest.fixture

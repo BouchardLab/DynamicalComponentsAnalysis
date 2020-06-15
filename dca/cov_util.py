@@ -299,15 +299,15 @@ def calc_cov_from_cross_cov_mats(cross_cov_mats):
     return cov
 
 
-def calc_pi_from_data(X, T):
-    """Calculates the mutual information ("predictive information"
-    or "PI") between variables  {1,...,T_pi} and {T_pi+1,...,2*T_pi}, which
-    are jointly Gaussian with covariance matrix cov_2_T_pi.
+def calc_pi_from_data(X, T, proj=None):
+    """Calculates the Gaussian Predictive Information between variables
+    {1,...,T_pi} and {T_pi+1,...,2*T_pi}..
 
     Parameters
     ----------
-    cov_2_T_pi : np.ndarray, shape (2*T_pi, 2*T_pi)
-        Covariance matrix.
+    T : int
+        This T should be 2 * T_pi. This T sets the joint window length not the
+        past or future window length.
 
     Returns
     -------
@@ -316,13 +316,12 @@ def calc_pi_from_data(X, T):
     """
     ccms = calc_cross_cov_mats_from_data(X, T)
 
-    return calc_pi_from_cross_cov_mats(ccms)
+    return calc_pi_from_cross_cov_mats(ccms, proj=proj)
 
 
 def calc_pi_from_cov(cov_2_T_pi):
-    """Calculates the mutual information ("predictive information"
-    or "PI") between variables  {1,...,T_pi} and {T_pi+1,...,2*T_pi}, which
-    are jointly Gaussian with covariance matrix cov_2_T_pi.
+    """Calculates the Gaussian Predictive Information between variables
+    {1,...,T_pi} and {T_pi+1,...,2*T_pi} with covariance matrix cov_2_T_pi.
 
     Parameters
     ----------

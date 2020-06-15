@@ -181,8 +181,9 @@ class DynamicalComponentsAnalysis(object):
     """Dynamical Components Analysis.
 
     Runs DCA on multidimensional timeseries data X to discover a projection
-    onto a d-dimensional subspace which maximizes the complexity, as defined by the Gaussian
-    Predictive Information (PI) of the d-dimensional dynamics over windows of length T.
+    onto a d-dimensional subspace of an N-dimensional space which maximizes the complexity, as
+    defined by the Gaussian Predictive Information (PI) of the d-dimensional dynamics over windows
+    of length T.
 
     Parameters
     ----------
@@ -226,6 +227,18 @@ class DynamicalComponentsAnalysis(object):
 
     Attributes
     ----------
+    T : int
+        Default T used for PI.
+    T_fit : int
+        T used for last cross covariance estimation.
+    d : int
+        Default d used for fitting the projection.
+    d_fit : int
+        d used for last projection fit.
+    cross covs : torch tensor
+        Cross covariance matrices from the last covariance estimation.
+    coef_ : ndarray (N, d)
+        Projection matrix from fit.
 
     """
     def __init__(self, d=None, T=None, init="random_ortho", n_init=1, stride=1, tol=1e-6,
@@ -278,7 +291,7 @@ class DynamicalComponentsAnalysis(object):
         X : ndarray or list of ndarrays
             Data to estimate the cross covariance matrix.
         T : int
-            T for PI calculation (optional.)
+            T for PI calculation (optional).
         regularization : str
             Whether to regularize cross covariance estimation.
         reg_ops : dict
@@ -313,6 +326,10 @@ class DynamicalComponentsAnalysis(object):
         ----------
         d : int
             Dimensionality of the projection (optional.)
+        T : int
+            T for PI calculation (optional). Default is `self.T`. If `T` is set here
+            it must be less than or equal to `self.T` or self.estimate_cross_covariance() must
+            be called with a larger `T`.
         n_init : int
             Number of random restarts (optional.)
         """
@@ -340,6 +357,10 @@ class DynamicalComponentsAnalysis(object):
         ----------
         d : int
             Dimensionality of the projection (optional.)
+        T : int
+            T for PI calculation (optional). Default is `self.T`. If `T` is set here
+            it must be less than or equal to `self.T` or self.estimate_cross_covariance() must
+            be called with a larger `T`.
         record_V : bool
             If True, saves a copy of V at each optimization step. Default is False.
         """
@@ -350,13 +371,15 @@ class DynamicalComponentsAnalysis(object):
         self.d_fit = d
         if T is None:
             T = self.T
+        if T < 1:
+            raise ValueError
         if (2 * T) > self.cross_covs.shape[0]:
             raise ValueError('T must less than or equal to the value when ' +
-                             '`estimate_cross_covariance` was called.')
+                             '`estimate_cross_covariance()` was called.')
         self.T_fit = T
 
         if self.cross_covs is None:
-            raise ValueError('Call estimate_cross_covariance() first.')
+            raise ValueError('Call `estimate_cross_covariance()` first.')
 
         c = self.cross_covs[:2 * T]
         N = c.shape[1]

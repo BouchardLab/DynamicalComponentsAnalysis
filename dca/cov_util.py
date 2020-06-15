@@ -50,7 +50,7 @@ def form_lag_matrix(X, T, stride=1, stride_tricks=True, writeable=False):
             X_with_lags[i, :] = X[i * stride:i * stride + T, :].flatten()
     return X_with_lags
 
-    
+
 def rectify_spectrum(cov, epsilon=1e-6, verbose=False):
     """Rectify the spectrum of a covariance matrix.
 

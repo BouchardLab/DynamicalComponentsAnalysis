@@ -348,9 +348,14 @@ def calc_pi_from_data(X, T, proj=None):
 
     Parameters
     ----------
+    X : ndarray or torch tensor (time, features) or (batches, time, features)
+        Data used to calculate the PI.
     T : int
         This T should be 2 * T_pi. This T sets the joint window length not the
         past or future window length.
+    proj : ndarray or torch tensor
+        Projection matrix for data (optional). If `proj` is not given, the PI of
+        the dataset is given.
 
     Returns
     -------

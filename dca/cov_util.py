@@ -342,7 +342,7 @@ def calc_cov_from_cross_cov_mats(cross_cov_mats):
     return cov
 
 
-def calc_pi_from_data(X, T, proj=None):
+def calc_pi_from_data(X, T, proj=None, stride=1):
     """Calculates the Gaussian Predictive Information between variables
     {1,...,T_pi} and {T_pi+1,...,2*T_pi}..
 
@@ -362,7 +362,7 @@ def calc_pi_from_data(X, T, proj=None):
     PI : float
         Mutual information in nats.
     """
-    ccms = calc_cross_cov_mats_from_data(X, T)
+    ccms = calc_cross_cov_mats_from_data(X, T, stride=stride)
 
     return calc_pi_from_cross_cov_mats(ccms, proj=proj)
 

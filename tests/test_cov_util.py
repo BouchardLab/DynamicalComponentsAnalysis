@@ -170,7 +170,7 @@ def test_regularize_cov(lorenz_dataset):
                                   reg_ops={'num_folds': 3})
 
 
-def test_stride(lorenz_dataset):
+def test_stride_DCA(lorenz_dataset):
     _, _, X, _, _ = lorenz_dataset
     X = X[:, :3]
     model = DCA(T=1)
@@ -182,3 +182,11 @@ def test_stride(lorenz_dataset):
     ccms2 = model.cross_covs.numpy()
     assert not np.allclose(ccms1, ccms2)
     assert_allclose(ccms1, ccms2, atol=5e-2)
+
+
+def test_stride_pi(lorenz_dataset):
+    _, _, X, _, _ = lorenz_dataset
+    X = X[:, :3]
+    pi = calc_pi_from_data(X, 10)
+    pi2 = calc_pi_from_data(X, 10, stride=9)
+    assert pi != pi2

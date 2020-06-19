@@ -155,6 +155,8 @@ def test_DCAKNN(noise_dataset):
 
 
 def test_stride_DCA(lorenz_dataset):
+    """Check that deterministic and random strides work for DCA.
+    """
     X = lorenz_dataset
     model = DCA(T=1)
     model.estimate_cross_covariance(X)
@@ -177,3 +179,8 @@ def test_stride_DCA(lorenz_dataset):
     ccms1 = model.cross_covs.numpy()
     assert not np.allclose(ccms1, ccms2)
     assert_allclose(ccms1, ccms2, atol=5e-2)
+
+    model = DCA(T=1, stride=.5, rng_or_seed=1)
+    model.estimate_cross_covariance(X)
+    ccms2 = model.cross_covs.numpy()
+    assert_allclose(ccms1, ccms2)

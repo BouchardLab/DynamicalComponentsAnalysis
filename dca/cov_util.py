@@ -6,9 +6,10 @@ import functools
 from numpy.lib.stride_tricks import as_strided
 
 from sklearn.utils.extmath import randomized_svd
+from sklearn.utils import check_random_state
 
 
-def form_lag_matrix(X, T, stride=1, stride_tricks=True, writeable=False):
+def form_lag_matrix(X, T, stride=1, stride_tricks=True, rng=None, writeable=False):
     """Form the data matrix with `T` lags.
 
     Parameters
@@ -17,8 +18,13 @@ def form_lag_matrix(X, T, stride=1, stride_tricks=True, writeable=False):
         Timeseries with no lags.
     T : int
         Number of lags.
-    stride : int
-        Number of original samples to move between lagged samples.
+    stride : int or float
+        If stride is an `int`, it defines the stride between lagged samples used
+        to estimate the cross covariance matrix. Setting stride > 1 can speed up the
+        calculation, but may lead to a loss in accuracy. Setting stride to a `float`
+        greater than 0 and less than 1 will random subselect samples.
+    rng : NumPy random state
+        Only used if `stride` is a float.
     stride_tricks : bool
         Whether to use numpy stride tricks to form the lagged matrix or create
         a new array. Using numpy stride tricks can can lower memory usage, especially for
@@ -34,8 +40,14 @@ def form_lag_matrix(X, T, stride=1, stride_tricks=True, writeable=False):
         Timeseries with lags.
     """
     if not isinstance(stride, int) or stride < 1:
-        raise ValueError('stride should be an int and greater than or equal to 1.')
+        if not isinstance(stride, float) or stride <= 0. or stride >= 1.:
+            raise ValueError('stride should be an int and greater than or equal to 1 or a float ' +
+                             'between 0 and 1.')
     N = X.shape[1]
+    frac = None
+    if isinstance(stride, float):
+        frac = stride
+        stride = 1
     n_lagged_samples = (len(X) - T) // stride + 1
     if n_lagged_samples < 1:
         raise ValueError('T is too long for a timeseries of length {}.'.format(len(X)))
@@ -48,6 +60,12 @@ def form_lag_matrix(X, T, stride=1, stride_tricks=True, writeable=False):
         X_with_lags = np.zeros((n_lagged_samples, T * N))
         for i in range(n_lagged_samples):
             X_with_lags[i, :] = X[i * stride:i * stride + T, :].flatten()
+    if frac is not None:
+        rng = check_random_state(rng)
+        idxs = np.sort(rng.choice(n_lagged_samples, size=int(np.ceil(n_lagged_samples * frac)),
+                                  replace=False))
+        X_with_lags = X_with_lags[idxs]
+
     return X_with_lags
 
 
@@ -108,7 +126,7 @@ def toeplitzify(cov, T, N, symmetrize=True):
     return cov_toep
 
 
-def calc_chunked_cov(X, T, stride, chunks, cov_est=None, stride_tricks=True):
+def calc_chunked_cov(X, T, stride, chunks, cov_est=None, rng=None, stride_tricks=True):
     """Calculate an unormalized (by sample count) lagged covariance matrix
     in chunks to save memory.
 
@@ -143,7 +161,7 @@ def calc_chunked_cov(X, T, stride, chunks, cov_est=None, stride_tricks=True):
     start = 0
     for chunk in range(chunks):
         X_with_lags = form_lag_matrix(X[start:ends[chunk]], T, stride=stride,
-                                      stride_tricks=stride_tricks)
+                                      rng=rng, stride_tricks=stride_tricks)
         start = ends[chunk] - T + 1
         ni_samples = X_with_lags.shape[0]
         cov_est += np.dot(X_with_lags.T, X_with_lags)
@@ -152,7 +170,7 @@ def calc_chunked_cov(X, T, stride, chunks, cov_est=None, stride_tricks=True):
 
 
 def calc_cross_cov_mats_from_data(X, T, mean=None, chunks=None, stride=1,
-                                  regularization=None, reg_ops=None,
+                                  rng=None, regularization=None, reg_ops=None,
                                   stride_tricks=True):
     """Compute the N-by-N cross-covariance matrix, where N is the data dimensionality,
     for each time lag up to T-1.
@@ -167,6 +185,13 @@ def calc_cross_cov_mats_from_data(X, T, mean=None, chunks=None, stride=1,
     chunks : int
         Number of chunks to break the data into when calculating the lagged cross
         covariance. More chunks will mean less memory used
+    stride : int or float
+        If stride is an `int`, it defines the stride between lagged samples used
+        to estimate the cross covariance matrix. Setting stride > 1 can speed up the
+        calculation, but may lead to a loss in accuracy. Setting stride to a `float`
+        greater than 0 and less than 1 will random subselect samples.
+    rng : NumPy random state
+        Only used if `stride` is a float.
     regularization : string
         Regularization method for computing the spatiotemporal covariance matrix.
     reg_ops : dict
@@ -200,7 +225,8 @@ def calc_cross_cov_mats_from_data(X, T, mean=None, chunks=None, stride=1,
             cov_est = np.zeros((N * T, N * T))
             n_samples = 0
             for Xi in X:
-                X_with_lags = form_lag_matrix(Xi, T, stride=stride, stride_tricks=stride_tricks)
+                X_with_lags = form_lag_matrix(Xi, T, stride=stride, stride_tricks=stride_tricks,
+                                              rng=rng)
                 cov_est += np.dot(X_with_lags.T, X_with_lags)
                 n_samples += len(X_with_lags)
             cov_est /= (n_samples - 1.)
@@ -209,7 +235,7 @@ def calc_cross_cov_mats_from_data(X, T, mean=None, chunks=None, stride=1,
             cov_est = np.zeros((N * T, N * T))
             for Xi in X:
                 cov_est, ni_samples = calc_chunked_cov(Xi, T, stride, chunks, cov_est=cov_est,
-                                                       stride_tricks=stride_tricks)
+                                                       stride_tricks=stride_tricks, rng=rng)
                 n_samples += ni_samples
             cov_est /= (n_samples - 1.)
     else:
@@ -222,11 +248,12 @@ def calc_cross_cov_mats_from_data(X, T, mean=None, chunks=None, stride=1,
         X = X - mean
         N = X.shape[-1]
         if chunks is None:
-            X_with_lags = form_lag_matrix(X, T, stride=stride, stride_tricks=stride_tricks)
+            X_with_lags = form_lag_matrix(X, T, stride=stride, stride_tricks=stride_tricks,
+                                          rng=rng)
             cov_est = np.cov(X_with_lags, rowvar=False)
         else:
             cov_est, n_samples = calc_chunked_cov(X, T, stride, chunks,
-                                                  stride_tricks=stride_tricks)
+                                                  stride_tricks=stride_tricks, rng=rng)
             cov_est /= (n_samples - 1.)
 
     if regularization is None:
@@ -342,7 +369,7 @@ def calc_cov_from_cross_cov_mats(cross_cov_mats):
     return cov
 
 
-def calc_pi_from_data(X, T, proj=None):
+def calc_pi_from_data(X, T, proj=None, stride=1, rng=None):
     """Calculates the Gaussian Predictive Information between variables
     {1,...,T_pi} and {T_pi+1,...,2*T_pi}..
 
@@ -356,13 +383,20 @@ def calc_pi_from_data(X, T, proj=None):
     proj : ndarray or torch tensor
         Projection matrix for data (optional). If `proj` is not given, the PI of
         the dataset is given.
+    stride : int or float
+        If stride is an `int`, it defines the stride between lagged samples used
+        to estimate the cross covariance matrix. Setting stride > 1 can speed up the
+        calculation, but may lead to a loss in accuracy. Setting stride to a `float`
+        greater than 0 and less than 1 will random subselect samples.
+    rng : NumPy random state
+        Only used if `stride` is a float.
 
     Returns
     -------
     PI : float
         Mutual information in nats.
     """
-    ccms = calc_cross_cov_mats_from_data(X, T)
+    ccms = calc_cross_cov_mats_from_data(X, T, stride=stride, rng=rng)
 
     return calc_pi_from_cross_cov_mats(ccms, proj=proj)
 

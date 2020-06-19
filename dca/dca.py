@@ -3,6 +3,7 @@ import numpy as np
 import scipy.stats
 from scipy.optimize import minimize
 from scipy.signal.windows import hann
+from sklearn.utils import check_random_state
 
 import torch
 import torch.nn.functional as F
@@ -275,12 +276,7 @@ class DynamicalComponentsAnalysis(object):
         self.cross_covs = None
         self.coef_ = None
         self.mean_ = None
-        if rng_or_seed is None:
-            self.rng = np.random
-        elif isinstance(rng_or_seed, np.random.RandomState):
-            self.rng = rng_or_seed
-        else:
-            self.rng = np.random.RandomState(rng_or_seed)
+        self.rng = check_random_state(rng_or_seed)
 
     def estimate_cross_covariance(self, X, T=None, regularization=None, reg_ops=None):
         """Estimate the cross covariance matrix from data.
@@ -310,6 +306,7 @@ class DynamicalComponentsAnalysis(object):
         cross_covs = calc_cross_cov_mats_from_data(X, 2 * self.T, mean=self.mean_,
                                                    chunks=self.chunk_cov_estimate,
                                                    stride=self.stride,
+                                                   rng=self.rng,
                                                    regularization=regularization,
                                                    reg_ops=reg_ops)
         self.cross_covs = torch.tensor(cross_covs, device=self.device, dtype=self.dtype)

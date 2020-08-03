@@ -1,3 +1,4 @@
+import logging
 import numpy as np
 import scipy as sp
 import collections
@@ -7,6 +8,9 @@ from numpy.lib.stride_tricks import as_strided
 
 from sklearn.utils.extmath import randomized_svd
 from sklearn.utils import check_random_state
+
+
+logging.basicConfig()
 
 
 def form_lag_matrix(X, T, stride=1, stride_tricks=True, rng=None, writeable=False):
@@ -69,7 +73,7 @@ def form_lag_matrix(X, T, stride=1, stride_tricks=True, rng=None, writeable=Fals
     return X_with_lags
 
 
-def rectify_spectrum(cov, epsilon=1e-6, verbose=False):
+def rectify_spectrum(cov, epsilon=1e-6, logger=None):
     """Rectify the spectrum of a covariance matrix.
 
     Parameters
@@ -81,11 +85,13 @@ def rectify_spectrum(cov, epsilon=1e-6, verbose=False):
     verbose : bool
         Whethere to print when the spectrum needs to be rectified.
     """
-    min_eig = np.min(sp.linalg.eigvalsh(cov))
-    if min_eig < 0:
-        cov += (-min_eig + epsilon) * np.eye(cov.shape[0])
-        if verbose:
-            print("Warning: non-PSD matrix (had to increase eigenvalues)")
+    eigvals = sp.linalg.eigvalsh(cov)
+    n_neg = np.sum(eigvals <= 0.)
+    if n_neg > 0:
+        cov += (-np.min(eigvals) + epsilon) * np.eye(cov.shape[0])
+        if logger is not None:
+            string = 'Non-PSD matrix, {} of {} eigenvalues were not positive.'
+            logger.info(string.format(n_neg, eigvals.size))
 
 
 def toeplitzify(cov, T, N, symmetrize=True):
@@ -171,7 +177,7 @@ def calc_chunked_cov(X, T, stride, chunks, cov_est=None, rng=None, stride_tricks
 
 def calc_cross_cov_mats_from_data(X, T, mean=None, chunks=None, stride=1,
                                   rng=None, regularization=None, reg_ops=None,
-                                  stride_tricks=True):
+                                  stride_tricks=True, logger=None):
     """Compute the N-by-N cross-covariance matrix, where N is the data dimensionality,
     for each time lag up to T-1.
 
@@ -271,7 +277,7 @@ def calc_cross_cov_mats_from_data(X, T, mean=None, chunks=None, stride=1,
     else:
         raise ValueError
 
-    rectify_spectrum(cov_est, verbose=True)
+    rectify_spectrum(cov_est, logger=logger)
     cross_cov_mats = calc_cross_cov_mats_from_cov(cov_est, T, N)
     return cross_cov_mats
 

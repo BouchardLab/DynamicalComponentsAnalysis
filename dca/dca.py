@@ -308,7 +308,8 @@ class DynamicalComponentsAnalysis(object):
                                                    stride=self.stride,
                                                    rng=self.rng,
                                                    regularization=regularization,
-                                                   reg_ops=reg_ops)
+                                                   reg_ops=reg_ops,
+                                                   logger=self._logger)
         self.cross_covs = torch.tensor(cross_covs, device=self.device, dtype=self.dtype)
         delta_time = round((time.time() - start) / 60., 1)
         self._logger.info('Cross covariance estimate took {:0.1f} minutes.'.format(delta_time))

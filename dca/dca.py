@@ -121,7 +121,7 @@ class DynamicalComponentsAnalysis(SingleProjectionComponentsAnalysis):
         Projection matrix from fit.
     """
     def __init__(self, d=None, T=None, init="random_ortho", n_init=1, stride=1, tol=1e-6,
-                 ortho_lambda=10., verbose=False, use_scipy=True, block_toeplitz=None,
+                 ortho_lambda=10., verbose=False, block_toeplitz=None,
                  chunk_cov_estimate=None, device="cpu", dtype=torch.float64, rng_or_seed=None):
 
         super(DynamicalComponentsAnalysis,
@@ -132,7 +132,6 @@ class DynamicalComponentsAnalysis(SingleProjectionComponentsAnalysis):
         self.chunk_cov_estimate = chunk_cov_estimate
         self.d = d
         self.d_fit = None
-        self.use_scipy = use_scipy
         if block_toeplitz is None:
             try:
                 if d > 40 and T > 10:
@@ -218,77 +217,52 @@ class DynamicalComponentsAnalysis(SingleProjectionComponentsAnalysis):
         c = self.cross_covs[:2 * T]
         N = c.shape[1]
         V_init = init_coef(N, d, self.rng, self.init)
-        v = torch.tensor(V_init, requires_grad=True,
-                         device=self.device, dtype=self.dtype)
 
         if not isinstance(c, torch.Tensor):
             c = torch.tensor(c, device=self.device, dtype=self.dtype)
 
-        if self.use_scipy:
+        def f_params(v_flat, requires_grad=True):
+            v_flat_torch = torch.tensor(v_flat,
+                                        requires_grad=requires_grad,
+                                        device=self.device,
+                                        dtype=self.dtype)
+            v_torch = v_flat_torch.reshape(N, d)
+            loss = build_loss(c, d, self.ortho_lambda, self.block_toeplitz)(v_torch)
+            return loss, v_flat_torch
+        objective = ObjectiveWrapper(f_params)
 
-            def f_params(v_flat, requires_grad=True):
-                v_flat_torch = torch.tensor(v_flat,
-                                            requires_grad=requires_grad,
-                                            device=self.device,
-                                            dtype=self.dtype)
-                v_torch = v_flat_torch.reshape(N, d)
-                loss = build_loss(c, d, self.ortho_lambda, self.block_toeplitz)(v_torch)
-                return loss, v_flat_torch
-            objective = ObjectiveWrapper(f_params)
+        def null_callback(*args, **kwargs):
+            pass
 
-            def null_callback(*args, **kwargs):
-                pass
+        if self.verbose or record_V:
+            if record_V:
+                self.V_seq = [V_init]
 
-            if self.verbose or record_V:
+            def callback(v_flat, objective):
                 if record_V:
-                    self.V_seq = [V_init]
-
-                def callback(v_flat, objective):
-                    if record_V:
-                        self.V_seq.append(v_flat.reshape(N, d))
-                    if self.verbose:
-                        loss, v_flat_torch = objective.core_computations(v_flat,
-                                                                         requires_grad=False)
-                        v_torch = v_flat_torch.reshape(N, d)
-                        loss = build_loss(c, d, self.ortho_lambda, self.block_toeplitz)(v_torch)
-                        loss = build_loss(c, d, self.ortho_lambda, self.block_toeplitz)(v_torch)
-                        reg_val = ortho_reg_fn(self.ortho_lambda, v_torch)
-                        loss = loss.detach().cpu().numpy()
-                        reg_val = reg_val.detach().cpu().numpy()
-                        PI = -(loss - reg_val)
-                        string = "Loss {}, PI: {} nats, reg: {}"
-                        self._logger.info(string.format(str(np.round(loss, 4)),
-                                                        str(np.round(PI, 4)),
-                                                        str(np.round(reg_val, 4))))
-
-                callback(V_init, objective)
-            else:
-                callback = null_callback
-
-            opt = minimize(objective.func, V_init.ravel(), method='L-BFGS-B', jac=objective.grad,
-                           options={'disp': self.verbose, 'ftol': self.tol},
-                           callback=lambda x: callback(x, objective))
-            v = opt.x.reshape(N, d)
-        else:
-            optimizer = torch.optim.LBFGS([v], max_eval=15000, max_iter=15000,
-                                          tolerance_change=self.tol, history_size=10,
-                                          line_search_fn='strong_wolfe')
-
-            def closure():
-                optimizer.zero_grad()
-                loss = build_loss(c, d, self.ortho_lambda, self.block_toeplitz)(v)
-                loss.backward()
+                    self.V_seq.append(v_flat.reshape(N, d))
                 if self.verbose:
-                    reg_val = ortho_reg_fn(self.ortho_lambda, v)
-                    loss_no_reg = loss - reg_val
-                    pi = -loss_no_reg.detach().cpu().numpy()
+                    loss, v_flat_torch = objective.core_computations(v_flat,
+                                                                     requires_grad=False)
+                    v_torch = v_flat_torch.reshape(N, d)
+                    loss = build_loss(c, d, self.ortho_lambda, self.block_toeplitz)(v_torch)
+                    reg_val = ortho_reg_fn(self.ortho_lambda, v_torch)
+                    loss = loss.detach().cpu().numpy()
                     reg_val = reg_val.detach().cpu().numpy()
-                    print("PI: {} nats, reg: {}".format(str(np.round(pi, 4)),
-                                                        str(np.round(reg_val, 4))))
-                return loss
+                    PI = -(loss - reg_val)
+                    string = "Loss {}, PI: {} nats, reg: {}"
+                    self._logger.info(string.format(str(np.round(loss, 4)),
+                                                    str(np.round(PI, 4)),
+                                                    str(np.round(reg_val, 4))))
 
-            optimizer.step(closure)
-            v = v.detach().cpu().numpy()
+            callback(V_init, objective)
+        else:
+            callback = null_callback
+
+        opt = minimize(objective.func, V_init.ravel(), method='L-BFGS-B', jac=objective.grad,
+                       options={'disp': self.verbose, 'ftol': self.tol},
+                       callback=lambda x: callback(x, objective))
+        v = opt.x.reshape(N, d)
 
         # Orthonormalize the basis prior to returning it
         V_opt = scipy.linalg.orth(v)

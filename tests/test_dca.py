@@ -36,9 +36,6 @@ def test_DCA(noise_dataset):
     model.score()
     model.score(X)
 
-    model = DCA(d=3, T=10, use_scipy=False)
-    model.fit(X)
-
     model = DCA(d=3, T=10, verbose=True)
     model.fit(X)
 

@@ -17,13 +17,15 @@ logging.basicConfig()
 
 def ortho_reg_fn(ortho_lambda, *Vs):
     """Regularization term which encourages the basis vectors in the
-    columns of V to be orthonormal.
+    columns of the Vs to be orthonormal.
+
     Parameters
     ----------
-    V : np.ndarray, shape (N, d)
-        Matrix whose columns are basis vectors.
+    Vs : np.ndarrays, shape (N, d)
+        Matrices whose columns are basis vectors.
     ortho_lambda : float
         Regularization hyperparameter.
+
     Returns
     -------
     reg_val : float
@@ -35,12 +37,14 @@ def ortho_reg_fn(ortho_lambda, *Vs):
 def _ortho_reg_fn(ortho_lambda, V):
     """Regularization term which encourages the basis vectors in the
     columns of V to be orthonormal.
+
     Parameters
     ----------
     V : np.ndarray, shape (N, d)
         Matrix whose columns are basis vectors.
     ortho_lambda : float
         Regularization hyperparameter.
+
     Returns
     -------
     reg_val : float
@@ -165,17 +169,17 @@ class BaseComponentsAnalysis(object):
         Number of samples to skip when estimating cross covariance matrices. Settings stride > 1
         will speedup covariance estimation but may reduce the quality of the covariance estimate
         for small datasets.
+    chunk_cov_estimate : None or int
+        If `None`, cov is estimated from entire time series. If an `int`, cov is estimated
+        by chunking up time series and averaging covariances from chucks. This can use less memory
+        and be faster for long timeseries. Requires that the length of the shortest timeseries
+        in the batch is longer than `T * chunk_cov_estimate`.
     tol : float
         Tolerance for stopping optimization. Default is 1e-6.
     ortho_lambda : float
         Coefficient on term that keeps V close to orthonormal.
     verbose : bool
         Verbosity during optimization.
-    chunk_cov_estimate : None or int
-        If `None`, cov is estimated from entire time series. If an `int`, cov is estimated
-        by chunking up time series and averaging covariances from chucks. This can use less memory
-        and be faster for long timeseries. Requires that the length of the shortest timeseries
-        in the batch is longer than `2 * T * chunk_cov_estimate`.
     device : str
         What device to run the computation on in Pytorch.
     dtype : pytorch.dtype
@@ -190,13 +194,15 @@ class BaseComponentsAnalysis(object):
     T_fit : int
         T used for last cross covariance estimation.
     """
-    def __init__(self, T=None, init="random_ortho", n_init=1, stride=1, tol=1e-6,
-                 verbose=False, device="cpu", dtype=torch.float64, rng_or_seed=None):
+    def __init__(self, T=None, init="random_ortho", n_init=1, stride=1,
+                 chunk_cov_estimate=None, tol=1e-6, verbose=False, device="cpu",
+                 dtype=torch.float64, rng_or_seed=None):
         self.T = T
         self.T_fit = None
         self.init = init
         self.n_init = n_init
         self.stride = stride
+        self.chunk_cov_estimate = chunk_cov_estimate
         self.tol = tol
         self.verbose = verbose
         self._logger = logging.getLogger('Model')
@@ -215,12 +221,12 @@ class BaseComponentsAnalysis(object):
         raise NotImplementedError
 
     def _fit_projection(self):
-        """Fit the projections.
+        """Fit the a single round of projections.
         """
         raise NotImplementedError
 
     def fit_projection(self):
-        """Fit the projections.
+        """Fit the projections, with `n_init` restarts.
         """
         raise NotImplementedError
 
@@ -250,10 +256,9 @@ class BaseComponentsAnalysis(object):
 class SingleProjectionComponentsAnalysis(BaseComponentsAnalysis):
     """Base class for Components Analysis with 1 projection.
 
-    Runs DCA on multidimensional timeseries data X to discover a projection
-    onto a d-dimensional subspace of an N-dimensional space which maximizes the complexity, as
-    defined by the Gaussian Predictive Information (PI) of the d-dimensional dynamics over windows
-    of length T.
+    Runs a Components Analysis method on multidimensional timeseries data X to discover a projection
+    onto a d-dimensional subspace of an N-dimensional space which maximizes the score of the
+    d-dimensional dynamics over windows of length T.
 
     Parameters
     ----------
@@ -272,22 +277,15 @@ class SingleProjectionComponentsAnalysis(BaseComponentsAnalysis):
         Number of samples to skip when estimating cross covariance matrices. Settings stride > 1
         will speedup covariance estimation but may reduce the quality of the covariance estimate
         for small datasets.
-    tol : float
-        Tolerance for stopping optimization. Default is 1e-6.
-    ortho_lambda : float
-        Coefficient on term that keeps V close to orthonormal.
-    verbose : bool
-        Verbosity during optimization.
-    use_scipy : bool
-        Whether to use SciPy or Pytorch L-BFGS-B. Default is True. Pytorch is not well tested.
-    block_toeplitz : bool
-        If True, uses the block-Toeplitz logdet algorithm which is typically faster and less
-        memory intensive on cpu for `T >~ 10` and `d >~ 40`.
     chunk_cov_estimate : None or int
         If `None`, cov is estimated from entire time series. If an `int`, cov is estimated
         by chunking up time series and averaging covariances from chucks. This can use less memory
         and be faster for long timeseries. Requires that the length of the shortest timeseries
-        in the batch is longer than `2 * T * chunk_cov_estimate`.
+        in the batch is longer than `T * chunk_cov_estimate`.
+    tol : float
+        Tolerance for stopping optimization. Default is 1e-6.
+    verbose : bool
+        Verbosity during optimization.
     device : str
         What device to run the computation on in Pytorch.
     dtype : pytorch.dtype
@@ -310,11 +308,13 @@ class SingleProjectionComponentsAnalysis(BaseComponentsAnalysis):
     coef_ : ndarray (N, d)
         Projection matrix from fit.
     """
-    def __init__(self, d=None, T=None, init="random_ortho", n_init=1, stride=1, tol=1e-6,
-                 verbose=False, device="cpu", dtype=torch.float64, rng_or_seed=None):
+    def __init__(self, d=None, T=None, init="random_ortho", n_init=1, stride=1,
+                 chunk_cov_estimate=None, tol=1e-6, verbose=False, device="cpu",
+                 dtype=torch.float64, rng_or_seed=None):
 
         super(SingleProjectionComponentsAnalysis,
-              self).__init__(T=T, init=init, n_init=n_init, stride=stride, tol=tol,
+              self).__init__(T=T, init=init, n_init=n_init, stride=stride,
+                             chunk_cov_estimate=chunk_cov_estimate, tol=tol,
                              verbose=verbose, device=device, dtype=dtype, rng_or_seed=rng_or_seed)
 
         self.d = d

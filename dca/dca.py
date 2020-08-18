@@ -82,6 +82,11 @@ class DynamicalComponentsAnalysis(SingleProjectionComponentsAnalysis):
         Number of samples to skip when estimating cross covariance matrices. Settings stride > 1
         will speedup covariance estimation but may reduce the quality of the covariance estimate
         for small datasets.
+    chunk_cov_estimate : None or int
+        If `None`, cov is estimated from entire time series. If an `int`, cov is estimated
+        by chunking up time series and averaging covariances from chucks. This can use less memory
+        and be faster for long timeseries. Requires that the length of the shortest timeseries
+        in the batch is longer than `2 * T * chunk_cov_estimate`.
     tol : float
         Tolerance for stopping optimization. Default is 1e-6.
     ortho_lambda : float
@@ -93,11 +98,6 @@ class DynamicalComponentsAnalysis(SingleProjectionComponentsAnalysis):
     block_toeplitz : bool
         If True, uses the block-Toeplitz logdet algorithm which is typically faster and less
         memory intensive on cpu for `T >~ 10` and `d >~ 40`.
-    chunk_cov_estimate : None or int
-        If `None`, cov is estimated from entire time series. If an `int`, cov is estimated
-        by chunking up time series and averaging covariances from chucks. This can use less memory
-        and be faster for long timeseries. Requires that the length of the shortest timeseries
-        in the batch is longer than `2 * T * chunk_cov_estimate`.
     device : str
         What device to run the computation on in Pytorch.
     dtype : pytorch.dtype
@@ -120,18 +120,16 @@ class DynamicalComponentsAnalysis(SingleProjectionComponentsAnalysis):
     coef_ : ndarray (N, d)
         Projection matrix from fit.
     """
-    def __init__(self, d=None, T=None, init="random_ortho", n_init=1, stride=1, tol=1e-6,
-                 ortho_lambda=10., verbose=False, block_toeplitz=None,
-                 chunk_cov_estimate=None, device="cpu", dtype=torch.float64, rng_or_seed=None):
+    def __init__(self, d=None, T=None, init="random_ortho", n_init=1, stride=1,
+                 chunk_cov_estimate=None, tol=1e-6, ortho_lambda=10., verbose=False,
+                 block_toeplitz=None, device="cpu", dtype=torch.float64, rng_or_seed=None):
 
         super(DynamicalComponentsAnalysis,
-              self).__init__(d=d, T=T, init=init, n_init=n_init, stride=stride, tol=tol,
-                             verbose=verbose, device=device, dtype=dtype, rng_or_seed=rng_or_seed)
+              self).__init__(d=d, T=T, init=init, n_init=n_init, stride=stride,
+                             chunk_cov_estimate=chunk_cov_estimate, tol=tol, verbose=verbose,
+                             device=device, dtype=dtype, rng_or_seed=rng_or_seed)
 
         self.ortho_lambda = ortho_lambda
-        self.chunk_cov_estimate = chunk_cov_estimate
-        self.d = d
-        self.d_fit = None
         if block_toeplitz is None:
             try:
                 if d > 40 and T > 10:
@@ -143,7 +141,6 @@ class DynamicalComponentsAnalysis(SingleProjectionComponentsAnalysis):
         else:
             self.block_toeplitz = block_toeplitz
         self.cross_covs = None
-        self.coef_ = None
 
     def estimate_data_statistics(self, X, T=None, regularization=None, reg_ops=None):
         """Estimate the cross covariance matrix from data.

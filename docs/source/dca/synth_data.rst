@@ -1,6 +1,6 @@
-==============
-dca.synth_data
-==============
+==================
+Synthetic Datasets
+==================
 
 .. automodule:: dca.synth_data
    :members:

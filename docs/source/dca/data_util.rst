@@ -1,6 +1,6 @@
-=============
-dca.data_util
-=============
+==============
+Data Utilities
+==============
 
 .. automodule:: dca.data_util
    :members:

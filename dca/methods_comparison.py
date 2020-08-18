@@ -6,12 +6,15 @@ import scipy
 from scipy.optimize import minimize
 from sklearn.decomposition import FactorAnalysis as FA, PCA
 from sklearn.exceptions import ConvergenceWarning
+from sklearn.utils import check_random_state
 from functools import partial
 
 import torch
 from torch.nn import functional as F
 
-from .dca import ortho_reg_fn
+
+from .base import init_coef
+
 
 __all__ = ['GaussianProcessFactorAnalysis',
            'SlowFeatureAnalysis',
@@ -66,22 +69,26 @@ class ForecastableComponentsAnalysis(object):
 
     """
     def __init__(self, d, T, init="random_ortho", n_init=1, tol=1e-6,
-                 ortho_lambda=10., verbose=False,
-                 device="cpu", dtype=torch.float64):
+                 verbose=False, device="cpu", dtype=torch.float64,
+                 rng_or_seed=20200818):
         self.d = d
+        if d > 1:
+            raise ValueError
         self.T = T
         self.init = init
         self.n_init = n_init
         self.tol = tol
-        self.ortho_lambda = ortho_lambda
         self.verbose = verbose
         self.device = device
         self.dtype = dtype
         self.cross_covs = None
+        self.rng = check_random_state(rng_or_seed)
 
     def fit(self, X, d=None, T=None, n_init=None):
         if d is None:
             d = self.d
+        if d > 1:
+            raise ValueError
         if T is None:
             T = self.T
         self.pca = PCA(whiten=True)
@@ -100,21 +107,10 @@ class ForecastableComponentsAnalysis(object):
     def _fit_projection(self, X, d=None):
         if d is None:
             d = self.d
-
-        N = X.shape[1]
-        if type(self.init) == str:
-            if self.init == "random":
-                V_init = np.random.normal(0, 1, (N, d))
-            elif self.init == "random_ortho":
-                V_init = scipy.stats.ortho_group.rvs(N)[:, :d]
-            elif self.init == "uniform":
-                V_init = np.ones((N, d)) / np.sqrt(N)
-                V_init = V_init + np.random.normal(0, 1e-3, V_init.shape)
-            else:
-                raise ValueError
-        else:
+        if d > 1:
             raise ValueError
-        V_init /= np.linalg.norm(V_init, axis=0, keepdims=True)
+        N = X.shape[1]
+        V_init = init_coef(N, d, self.rng, self.init)
 
         v = torch.tensor(V_init, requires_grad=True,
                          device=self.device, dtype=self.dtype)
@@ -125,17 +121,15 @@ class ForecastableComponentsAnalysis(object):
 
         if self.verbose:
             def callback(v_flat):
-                v_flat_torch = torch.tensor(v_flat,
-                                            requires_grad=True,
-                                            device=self.device,
-                                            dtype=self.dtype)
-                v_torch = v_flat_torch.reshape(N, d)
-                ent = ent_loss_fn(Xt, v_torch, self.T)
-                reg_val = ortho_reg_fn(v_torch, self.ortho_lambda)
-                ent = ent.detach().cpu().numpy()
-                reg_val = reg_val.detach().cpu().numpy()
-                print("Ent: {} bits, reg: {}".format(str(np.round(ent, 4)),
-                                                     str(np.round(reg_val, 4))))
+                with torch.no_grad():
+                    v_flat_torch = torch.tensor(v_flat,
+                                                device=self.device,
+                                                dtype=self.dtype)
+                    v_torch = v_flat_torch.reshape(N, d)
+                    v_torch = v_torch / torch.norm(v_torch, dim=0, keepdim=True)
+                    ent = ent_loss_fn(Xt, v_torch, self.T)
+                    ent = ent.detach().cpu().numpy()
+                    print("Ent: {} bits".format(str(np.round(ent, 4))))
             callback(V_init)
         else:
             callback = None
@@ -146,9 +140,8 @@ class ForecastableComponentsAnalysis(object):
                                         device=self.device,
                                         dtype=self.dtype)
             v_torch = v_flat_torch.reshape(N, d)
-            ent = ent_loss_fn(Xt, v_torch, self.T)
-            reg_val = ortho_reg_fn(v_torch, self.ortho_lambda)
-            loss = ent + reg_val
+            v_torch = v_torch / torch.norm(v_torch, dim=0, keepdim=True)
+            loss = ent_loss_fn(Xt, v_torch, self.T)
             loss.backward()
             grad = v_flat_torch.grad
             return (loss.detach().cpu().numpy().astype(float),
@@ -161,12 +154,12 @@ class ForecastableComponentsAnalysis(object):
 
         # Orthonormalize the basis prior to returning it
         V_opt = scipy.linalg.orth(v)
-        v_flat_torch = torch.tensor(V_opt.ravel(),
-                                    requires_grad=True,
-                                    device=self.device,
-                                    dtype=self.dtype)
-        v_torch = v_flat_torch.reshape(N, d)
-        final_pi = ent_loss_fn(Xt, v_torch, self.T).detach().cpu().numpy()
+        with torch.no_grad():
+            v_flat_torch = torch.tensor(V_opt.ravel(),
+                                        device=self.device,
+                                        dtype=self.dtype)
+            v_torch = v_flat_torch.reshape(N, d)
+            final_pi = ent_loss_fn(Xt, v_torch, self.T).detach().cpu().numpy()
         return V_opt, final_pi
 
     def transform(self, X):

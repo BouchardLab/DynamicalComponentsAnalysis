@@ -1,5 +1,5 @@
 ======================
-dca.methods_comparison
+Methods Comparison
 ======================
 
 .. automodule:: dca.methods_comparison

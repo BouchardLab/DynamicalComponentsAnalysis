@@ -1,5 +1,5 @@
 =======
-dca.dca
+Dynamical Components Analysis Classes
 =======
 
 .. automodule:: dca.dca

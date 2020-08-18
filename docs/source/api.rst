@@ -8,6 +8,7 @@ API
     :maxdepth: 2
 
     dca/dca
+    dca/base
     dca/methods_comparison
     dca/cov_util
     dca/synth_data

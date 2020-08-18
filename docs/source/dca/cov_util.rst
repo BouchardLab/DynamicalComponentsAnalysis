@@ -1,5 +1,5 @@
 ============
-dca.cov_util
+Covariance Utilities
 ============
 
 .. automodule:: dca.cov_util

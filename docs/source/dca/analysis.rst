@@ -1,5 +1,5 @@
 ============
-dca.analysis
+Analysis
 ============
 
 .. automodule:: dca.analysis

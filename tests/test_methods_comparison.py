@@ -21,7 +21,7 @@ def test_FCA(noise_dataset):
     """Test that a FCA model can be fit with no errors.
     """
     X = noise_dataset
-    model = FCA(d=3, T=10)
+    model = FCA(d=1, T=10)
     model.fit(X)
     model.transform(X)
     model.fit_transform(X)

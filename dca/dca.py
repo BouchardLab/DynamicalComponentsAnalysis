@@ -3,49 +3,20 @@ import numpy as np
 import scipy.stats
 from scipy.optimize import minimize
 from scipy.signal.windows import hann
-from sklearn.utils import check_random_state
 
 import torch
 import torch.nn.functional as F
 
+from .base import SingleProjectionComponentsAnalysis, ortho_reg_fn, init_coef, ObjectiveWrapper
 from .cov_util import (calc_cross_cov_mats_from_data, calc_pi_from_cross_cov_mats,
                        calc_pi_from_cross_cov_mats_block_toeplitz)
 
 __all__ = ['DynamicalComponentsAnalysis',
            'DynamicalComponentsAnalysisFFT',
-           'ortho_reg_fn',
-           'build_loss',
-           'init_coef']
+           'build_loss']
 
 
 logging.basicConfig()
-
-
-def ortho_reg_fn(V, ortho_lambda):
-    """Regularization term which encourages the basis vectors in the
-    columns of V to be orthonormal.
-    Parameters
-    ----------
-    V : np.ndarray, shape (N, d)
-        Matrix whose columns are basis vectors.
-    ortho_lambda : float
-        Regularization hyperparameter.
-    Returns
-    -------
-    reg_val : float
-        Value of regularization function.
-    """
-
-    use_torch = isinstance(V, torch.Tensor)
-    d = V.shape[1]
-
-    if use_torch:
-        reg_val = ortho_lambda * torch.sum((torch.mm(V.t(), V) -
-                                            torch.eye(d, device=V.device, dtype=V.dtype))**2)
-    else:
-        reg_val = ortho_lambda * np.sum((np.dot(V.T, V) - np.eye(d))**2)
-
-    return reg_val
 
 
 def build_loss(cross_cov_mats, d, ortho_lambda=1., block_toeplitz=False):
@@ -75,109 +46,18 @@ def build_loss(cross_cov_mats, d, ortho_lambda=1., block_toeplitz=False):
     if block_toeplitz:
         def loss(V_flat):
             V = V_flat.reshape(N, d)
-            reg_val = ortho_reg_fn(V, ortho_lambda)
+            reg_val = ortho_reg_fn(ortho_lambda, V)
             return -calc_pi_from_cross_cov_mats_block_toeplitz(cross_cov_mats, V) + reg_val
     else:
         def loss(V_flat):
             V = V_flat.reshape(N, d)
-            reg_val = ortho_reg_fn(V, ortho_lambda)
+            reg_val = ortho_reg_fn(ortho_lambda, V)
             return -calc_pi_from_cross_cov_mats(cross_cov_mats, V) + reg_val
 
     return loss
 
 
-class ObjectiveWrapper(object):
-    """Helper object to cache gradient computation for minimization.
-
-    Parameters
-    ----------
-    f_params : callable
-        Function to calculate the loss as a function of the parameters.
-    """
-    def __init__(self, f_params):
-        self.common_computations = None
-        self.params = None
-        self.f_params = f_params
-        self.n_f = 0
-        self.n_g = 0
-        self.n_c = 0
-
-    def core_computations(self, *args, **kwargs):
-        """Calculate the part of the computation that is common to computing
-        the loss and the gradient.
-
-        Parameters
-        ----------
-        args
-            Any other arguments that self.f_params needs.
-        """
-        params = args[0]
-        if not np.array_equal(params, self.params):
-            self.n_c += 1
-            self.common_computations = self.f_params(*args, **kwargs)
-            self.params = params.copy()
-        return self.common_computations
-
-    def func(self, *args):
-        """Calculate and return the loss.
-
-        Parameters
-        ----------
-        args
-            Any other arguments that self.f_params needs.
-        """
-        self.n_f += 1
-        loss, _ = self.core_computations(*args)
-        return loss.detach().cpu().numpy().astype(float)
-
-    def grad(self, *args):
-        """Calculate and return the gradient of the loss.
-
-        Parameters
-        ----------
-        args
-            Any other arguments that self.f_params needs.
-        """
-        self.n_g += 1
-        loss, params_torch = self.core_computations(*args)
-        loss.backward(retain_graph=True)
-        grad = params_torch.grad
-        return grad.detach().cpu().numpy().astype(float)
-
-
-def init_coef(N, d, rng, init):
-    """Initialize a projection coefficent matrix.
-
-    Parameters
-    ----------
-    N : int
-        Original dimensionality.
-    d : int
-        Projected dimensionality.
-    rng : np.random.RandomState
-        Random state for generation.
-    init : str or ndarray
-        Initialization type.
-    """
-    if type(init) == str:
-        if init == "random":
-            V_init = rng.normal(0, 1, (N, d))
-        elif init == "random_ortho":
-            V_init = scipy.stats.ortho_group.rvs(N, random_state=rng)[:, :d]
-        elif init == "uniform":
-            V_init = np.ones((N, d)) / np.sqrt(N)
-            V_init = V_init + rng.normal(0, 1e-3, V_init.shape)
-        else:
-            raise ValueError
-    elif isinstance(init, np.ndarray):
-        V_init = init.copy()
-    else:
-        raise ValueError
-    V_init /= np.linalg.norm(V_init, axis=0, keepdims=True)
-    return V_init
-
-
-class DynamicalComponentsAnalysis(object):
+class DynamicalComponentsAnalysis(SingleProjectionComponentsAnalysis):
     """Dynamical Components Analysis.
 
     Runs DCA on multidimensional timeseries data X to discover a projection
@@ -239,28 +119,19 @@ class DynamicalComponentsAnalysis(object):
         Cross covariance matrices from the last covariance estimation.
     coef_ : ndarray (N, d)
         Projection matrix from fit.
-
     """
     def __init__(self, d=None, T=None, init="random_ortho", n_init=1, stride=1, tol=1e-6,
                  ortho_lambda=10., verbose=False, use_scipy=True, block_toeplitz=None,
                  chunk_cov_estimate=None, device="cpu", dtype=torch.float64, rng_or_seed=None):
+
+        super(DynamicalComponentsAnalysis,
+              self).__init__(d=d, T=T, init=init, n_init=n_init, stride=stride, tol=tol,
+                             verbose=verbose, device=device, dtype=dtype, rng_or_seed=rng_or_seed)
+
+        self.ortho_lambda = ortho_lambda
+        self.chunk_cov_estimate = chunk_cov_estimate
         self.d = d
         self.d_fit = None
-        self.T = T
-        self.T_fit = None
-        self.init = init
-        self.n_init = n_init
-        self.stride = stride
-        self.tol = tol
-        self.ortho_lambda = ortho_lambda
-        self.verbose = verbose
-        self._logger = logging.getLogger('DCA')
-        if verbose:
-            self._logger.setLevel(logging.DEBUG)
-        else:
-            self._logger.setLevel(logging.WARNING)
-        self.device = device
-        self.dtype = dtype
         self.use_scipy = use_scipy
         if block_toeplitz is None:
             try:
@@ -272,13 +143,10 @@ class DynamicalComponentsAnalysis(object):
                 self.block_toeplitz = False
         else:
             self.block_toeplitz = block_toeplitz
-        self.chunk_cov_estimate = chunk_cov_estimate
         self.cross_covs = None
         self.coef_ = None
-        self.mean_ = None
-        self.rng = check_random_state(rng_or_seed)
 
-    def estimate_cross_covariance(self, X, T=None, regularization=None, reg_ops=None):
+    def estimate_data_statistics(self, X, T=None, regularization=None, reg_ops=None):
         """Estimate the cross covariance matrix from data.
 
         Parameters
@@ -315,37 +183,6 @@ class DynamicalComponentsAnalysis(object):
         self._logger.info('Cross covariance estimate took {:0.1f} minutes.'.format(delta_time))
 
         return self
-
-    def fit_projection(self, d=None, T=None, n_init=None):
-        """Fit the projection matrix.
-
-        Parameters
-        ----------
-        d : int
-            Dimensionality of the projection (optional.)
-        T : int
-            T for PI calculation (optional). Default is `self.T`. If `T` is set here
-            it must be less than or equal to `self.T` or self.estimate_cross_covariance() must
-            be called with a larger `T`.
-        n_init : int
-            Number of random restarts (optional.)
-        """
-        if n_init is None:
-            n_init = self.n_init
-        pis = []
-        coefs = []
-        for ii in range(n_init):
-            start = time.time()
-            self._logger.info('Starting projection fig {} of {}.'.format(ii + 1, n_init))
-            coef, pi = self._fit_projection(d=d, T=T)
-            delta_time = round((time.time() - start) / 60., 1)
-            self._logger.info('Projection fit {} of {} took {:0.1f} minutes.'.format(ii + 1,
-                                                                                     n_init,
-                                                                                     delta_time))
-            pis.append(pi)
-            coefs.append(coef)
-        idx = np.argmax(pis)
-        self.coef_ = coefs[idx]
 
     def _fit_projection(self, d=None, T=None, record_V=False):
         """Fit the projection matrix.
@@ -415,7 +252,7 @@ class DynamicalComponentsAnalysis(object):
                         v_torch = v_flat_torch.reshape(N, d)
                         loss = build_loss(c, d, self.ortho_lambda, self.block_toeplitz)(v_torch)
                         loss = build_loss(c, d, self.ortho_lambda, self.block_toeplitz)(v_torch)
-                        reg_val = ortho_reg_fn(v_torch, self.ortho_lambda)
+                        reg_val = ortho_reg_fn(self.ortho_lambda, v_torch)
                         loss = loss.detach().cpu().numpy()
                         reg_val = reg_val.detach().cpu().numpy()
                         PI = -(loss - reg_val)
@@ -442,7 +279,7 @@ class DynamicalComponentsAnalysis(object):
                 loss = build_loss(c, d, self.ortho_lambda, self.block_toeplitz)(v)
                 loss.backward()
                 if self.verbose:
-                    reg_val = ortho_reg_fn(v, self.ortho_lambda)
+                    reg_val = ortho_reg_fn(self.ortho_lambda, v)
                     loss_no_reg = loss - reg_val
                     pi = -loss_no_reg.detach().cpu().numpy()
                     reg_val = reg_val.detach().cpu().numpy()
@@ -457,71 +294,6 @@ class DynamicalComponentsAnalysis(object):
         V_opt = scipy.linalg.orth(v)
         final_pi = calc_pi_from_cross_cov_mats(c, V_opt).detach().cpu().numpy()
         return V_opt, final_pi
-
-    def fit(self, X, d=None, T=None, regularization=None, reg_ops=None, n_init=None):
-        """Estimate the cross covariance matrix and fit the projection matrix.
-
-        Parameters
-        ----------
-        X : ndarray or list of ndarrays
-            Data to estimate the cross covariance matrix.
-        d : int
-            Dimensionality of the projection (optional.)
-        T : int
-            T for PI calculation (optional.)
-        regularization : str
-            Whether to regularize cross covariance estimation.
-        reg_ops : dict
-            Options for cross covariance regularization.
-        n_init : int
-            Number of random restarts (optional.)
-        """
-        if n_init is None:
-            n_init = self.n_init
-        self.estimate_cross_covariance(X, T=T, regularization=regularization,
-                                       reg_ops=reg_ops)
-        self.fit_projection(d=d, n_init=n_init)
-        return self
-
-    def transform(self, X):
-        """Project the data onto the DCA components after removing the training
-        mean.
-
-        Parameters
-        ----------
-        X : ndarray or list of ndarrays
-            Data to estimate the cross covariance matrix.
-        """
-        if isinstance(X, list):
-            y = [(Xi - self.mean_).dot(self.coef_) for Xi in X]
-        elif X.ndim == 3:
-            y = np.stack([(Xi - self.mean_).dot(self.coef_) for Xi in X])
-        else:
-            y = (X - self.mean_).dot(self.coef_)
-        return y
-
-    def fit_transform(self, X, d=None, T=None, regularization=None,
-                      reg_ops=None, n_init=None):
-        """Estimate the cross covariance matrix and fit the projection matrix. Then
-        project the data onto the DCA components.
-
-        Parameters
-        ----------
-        X : ndarray or list of ndarrays
-            Data to estimate the cross covariance matrix.
-        d : int
-            Dimensionality of the projection (optional.)
-        T : int
-            T for PI calculation (optional.)
-        regularization : str
-            Whether to regularize cross covariance estimation.
-        reg_ops : dict
-            Options for cross covariance regularization.
-        n_init : int
-            Number of random restarts (optional.)
-        """
-        self.fit(X, d=d, T=T, regularization=regularization, reg_ops=reg_ops, n_init=n_init)
-        return self.transform(X)
 
     def score(self, X=None):
         """Calculate the PI of data for the DCA projection.
@@ -672,7 +444,7 @@ class DynamicalComponentsAnalysisFFT(object):
                                             dtype=self.dtype)
                 v_torch = v_flat_torch.reshape(N, d)
                 pi = pi_fft(Xt, v_torch, self.T)
-                reg_val = ortho_reg_fn(v_torch, self.ortho_lambda)
+                reg_val = ortho_reg_fn(self.ortho_lambda, v_torch)
                 pi = pi.detach().cpu().numpy()
                 reg_val = reg_val.detach().cpu().numpy()
                 print("PI: {} nats, reg: {}".format(str(np.round(pi, 4)),
@@ -688,7 +460,7 @@ class DynamicalComponentsAnalysisFFT(object):
                                         dtype=self.dtype)
             v_torch = v_flat_torch.reshape(N, d)
             pi = pi_fft(Xt, v_torch, self.T)
-            reg_val = ortho_reg_fn(v_torch, self.ortho_lambda)
+            reg_val = ortho_reg_fn(self.ortho_lambda, v_torch)
             loss = -pi + reg_val
             loss.backward()
             grad = v_flat_torch.grad

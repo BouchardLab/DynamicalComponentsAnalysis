@@ -51,7 +51,7 @@ def test_DCA_variable_d(noise_dataset):
     """
     X = noise_dataset
     model = DCA(d=3, T=10)
-    model.estimate_cross_covariance(X)
+    model.estimate_data_statistics(X)
     model.fit_projection()
     assert model.coef_.shape[1] == 3
     assert model.d_fit == 3
@@ -65,7 +65,7 @@ def test_DCA_variable_T(noise_dataset):
     """
     X = noise_dataset
     model = DCA(d=3, T=10)
-    model.estimate_cross_covariance(X)
+    model.estimate_data_statistics(X)
     model.rng = np.random.RandomState(0)
     model.fit_projection()
     assert model.T_fit == 10
@@ -159,28 +159,28 @@ def test_stride_DCA(lorenz_dataset):
     """
     X = lorenz_dataset
     model = DCA(T=1)
-    model.estimate_cross_covariance(X)
+    model.estimate_data_statistics(X)
     ccms1 = model.cross_covs.numpy()
 
     model = DCA(T=1, stride=2)
-    model.estimate_cross_covariance(X)
+    model.estimate_data_statistics(X)
     ccms2 = model.cross_covs.numpy()
     assert not np.allclose(ccms1, ccms2)
     assert_allclose(ccms1, ccms2, atol=5e-2)
 
     model = DCA(T=1, stride=.5, rng_or_seed=0)
-    model.estimate_cross_covariance(X)
+    model.estimate_data_statistics(X)
     ccms2 = model.cross_covs.numpy()
     assert not np.allclose(ccms1, ccms2)
     assert_allclose(ccms1, ccms2, atol=5e-2)
 
     model = DCA(T=1, stride=.5, rng_or_seed=1)
-    model.estimate_cross_covariance(X)
+    model.estimate_data_statistics(X)
     ccms1 = model.cross_covs.numpy()
     assert not np.allclose(ccms1, ccms2)
     assert_allclose(ccms1, ccms2, atol=5e-2)
 
     model = DCA(T=1, stride=.5, rng_or_seed=1)
-    model.estimate_cross_covariance(X)
+    model.estimate_data_statistics(X)
     ccms2 = model.cross_covs.numpy()
     assert_allclose(ccms1, ccms2)

@@ -34,7 +34,7 @@ Requirements
 Runtime
 ^^^^^^^
 
-PyUoI requires
+DCA requires
 
   * numpy
   * scipy

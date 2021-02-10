@@ -38,3 +38,21 @@ The 4 datasets used in the DCA paper can be found in the following locations
 * [HC](https://github.com/KordingLab/Neural_Decoding) - See link to the datasets in the README
 * [Temperature](https://www.kaggle.com/selfishgene/historical-hourly-weather-data?select=temperature.csv) - We used the 30 US cities from temperature.csv.
 * [Accelerometer](https://github.com/mmalekzadeh/motion-sense/tree/master/data) - We used std_6/sub_19.csv from A_DeviceMotion_data.zip
+
+
+## Copyright
+Dynamical Components Analysis (DCA) Copyright (c) 2021, The
+Regents of the University of California, through Lawrence Berkeley
+National Laboratory (subject to receipt of any required approvals
+from the U.S. Dept. of Energy). All rights reserved.
+
+If you have questions about your rights to use or distribute this software,
+please contact Berkeley Lab's Intellectual Property Office at
+IPO@lbl.gov.
+
+NOTICE.  This Software was developed under funding from the U.S. Department
+of Energy and the U.S. Government consequently retains certain rights.  As
+such, the U.S. Government has been granted for itself and others acting on
+its behalf a paid-up, nonexclusive, irrevocable, worldwide license in the
+Software to reproduce, distribute copies to the public, prepare derivative 
+works, and perform publicly and display publicly, and to permit others to do so.

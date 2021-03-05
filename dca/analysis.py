@@ -3,7 +3,6 @@ from sklearn.linear_model import LinearRegression as LR
 from sklearn.decomposition import PCA
 from scipy.stats import special_ortho_group as sog
 
-from .cov_util import calc_cross_cov_mats_from_data
 from .data_util import CrossValidate, form_lag_matrix
 from .methods_comparison import SlowFeatureAnalysis as SFA
 from .dca import DynamicalComponentsAnalysis

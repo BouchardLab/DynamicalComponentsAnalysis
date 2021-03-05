@@ -293,7 +293,7 @@ def make_cepts2(X, T_pi):
     # Compute the power spectral density
     window = torch.Tensor(hann(Y.shape[-1])[np.newaxis, np.newaxis]).type(Y.dtype)
     Yf = torch.fft.rfft(Y * window, dim=1)
-    spect = Yf[:, :, :, 0]**2 + Yf[:, :, :, 1]**2
+    spect = abs(Yf)**2
     spect = spect.mean(dim=1)
     spect = torch.cat([torch.flip(spect[:, 1:], dims=(1,)), spect], dim=1)
 
@@ -302,7 +302,7 @@ def make_cepts2(X, T_pi):
 
     # Compute squared cepstral coefs (b_k^2)
     cepts = torch.fft.rfft(logspect, dim=1) / float(Y.shape[-1])
-    cepts = torch.sqrt(cepts[:, :, 0]**2 + cepts[:, :, 1]**2)
+    cepts = abs(cepts)
     return cepts**2
 
 

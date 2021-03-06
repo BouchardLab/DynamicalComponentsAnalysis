@@ -26,8 +26,8 @@ def make_norm_power(X, T_ent):
     """Calculate the normalize power spectrum."""
     Y = F.unfold(X, kernel_size=[T_ent, 1], stride=T_ent)
     Y = torch.transpose(Y, 1, 2)
-    Yf = torch.fft.rfft(Y, 1, onesided=True)
-    Yp = torch.mean(Yf[:, :, :, 0]**2 + Yf[:, :, :, 1]**2, dim=1)
+    Yf = torch.fft.rfft(Y, dim=1)
+    Yp = torch.mean(abs(Yf)**2, dim=1)
     return Yp / torch.sum(Yp, dim=1, keepdim=True)
 
 

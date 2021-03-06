@@ -3,7 +3,6 @@ from sklearn.linear_model import LinearRegression as LR
 from sklearn.decomposition import PCA
 from scipy.stats import special_ortho_group as sog
 
-from .cov_util import calc_cross_cov_mats_from_data
 from .data_util import CrossValidate, form_lag_matrix
 from .methods_comparison import SlowFeatureAnalysis as SFA
 from .dca import DynamicalComponentsAnalysis
@@ -114,15 +113,14 @@ def run_analysis(X, Y, T_pi_vals, dim_vals, offset_vals, num_cv_folds, decoding_
         Y_test_ctd = Y_test - Y_mean
 
         # compute cross-cov mats for DCA
-        T_max = 2 * np.max(T_pi_vals)
-        cross_cov_mats = calc_cross_cov_mats_from_data(X_train_ctd, T_max)
+        dca_model = DynamicalComponentsAnalysis(T=np.max(T_pi_vals))
+        dca_model.estimate_data_statistics(X_train_ctd)
 
         # do PCA/SFA
         pca_model = PCA(svd_solver='full').fit(np.concatenate(X_train_ctd))
         sfa_model = SFA(1).fit(X_train_ctd)
 
         # make DCA object
-        opt = DynamicalComponentsAnalysis(d=1, T=1)
 
         # loop over dimensionalities
         for dim_idx in range(len(dim_vals)):
@@ -147,9 +145,8 @@ def run_analysis(X, Y, T_pi_vals, dim_vals, offset_vals, num_cv_folds, decoding_
             # loop over T_pi vals
             for T_pi_idx in range(len(T_pi_vals)):
                 T_pi = T_pi_vals[T_pi_idx]
-                opt.cross_covs = cross_cov_mats[:2 * T_pi]
-                opt.fit_projection(d=dim, n_init=n_init)
-                V_dca = opt.coef_
+                dca_model.fit_projection(d=dim, T=T_pi, n_init=n_init)
+                V_dca = dca_model.coef_
 
                 # compute DCA R2 over offsets
                 X_train_dca = [np.dot(Xi, V_dca) for Xi in X_train_ctd]
@@ -221,11 +218,10 @@ def run_dim_analysis_dca(X, Y, T_pi, dim_vals, offset, num_cv_folds, decoding_wi
         Y_train_ctd = [Yi - Y_mean for Yi in Y_train]
         Y_test_ctd = Y_test - Y_mean
 
+        # make DCA object
         # compute cross-cov mats for DCA
-        cross_cov_mats = calc_cross_cov_mats_from_data(X_train_ctd, 2 * T_pi)
-
-        # make DCA object with arb parameters
-        opt = DynamicalComponentsAnalysis(d=1, T=1)
+        dca_model = DynamicalComponentsAnalysis(T=T_pi)
+        dca_model.estimate_data_statistics(X_train_ctd)
 
         # loop over dimensionalities
         for dim_idx in range(len(dim_vals)):
@@ -233,9 +229,8 @@ def run_dim_analysis_dca(X, Y, T_pi, dim_vals, offset, num_cv_folds, decoding_wi
             if verbose:
                 print("dim", dim_idx + 1, "of", len(dim_vals))
 
-            opt.cross_covs = cross_cov_mats
-            opt.fit_projection(d=dim, n_init=n_init)
-            V_dca = opt.coef_
+            dca_model.fit_projection(d=dim, n_init=n_init)
+            V_dca = dca_model.coef_
 
             # compute DCA R2 over offsets
             X_train_dca = [np.dot(Xi, V_dca) for Xi in X_train_ctd]

@@ -1,11 +1,15 @@
+import scipy
 import numpy as np
 from sklearn.linear_model import LinearRegression as LR
 from sklearn.decomposition import PCA
 from scipy.stats import special_ortho_group as sog
 
-from .data_util import CrossValidate, form_lag_matrix
+from .base import init_coef
+from .cov_util import calc_pi_from_cross_cov_mats, form_lag_matrix
+from .data_util import CrossValidate
 from .methods_comparison import SlowFeatureAnalysis as SFA
-from .dca import DynamicalComponentsAnalysis
+from .dca import DynamicalComponentsAnalysis as DCA, DynamicalComponentsAnalysisFFT as DCAFFT
+
 
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -113,7 +117,7 @@ def run_analysis(X, Y, T_pi_vals, dim_vals, offset_vals, num_cv_folds, decoding_
         Y_test_ctd = Y_test - Y_mean
 
         # compute cross-cov mats for DCA
-        dca_model = DynamicalComponentsAnalysis(T=np.max(T_pi_vals))
+        dca_model = DCA(T=np.max(T_pi_vals))
         dca_model.estimate_data_statistics(X_train_ctd)
 
         # do PCA/SFA
@@ -220,7 +224,7 @@ def run_dim_analysis_dca(X, Y, T_pi, dim_vals, offset, num_cv_folds, decoding_wi
 
         # make DCA object
         # compute cross-cov mats for DCA
-        dca_model = DynamicalComponentsAnalysis(T=T_pi)
+        dca_model = DCA(T=T_pi)
         dca_model.estimate_data_statistics(X_train_ctd)
 
         # loop over dimensionalities
@@ -250,3 +254,145 @@ def run_dim_analysis_dca(X, Y, T_pi, dim_vals, offset, num_cv_folds, decoding_wi
                     null_results[fold_idx, dim_idx, ii] = r2_dca
 
     return results, null_results
+
+
+def gen_pi_heatmap(calc_pi_fn, N=100):
+    theta_vals = np.linspace(0, np.pi, N)
+    phi_vals = np.linspace(0, np.pi, N)
+    heatmap = np.zeros((N, N))
+    for theta_idx in range(N):
+        if theta_idx % 10 == 0:
+            print("theta_idx =", theta_idx)
+        for phi_idx in range(N):
+            theta, phi = theta_vals[theta_idx], phi_vals[phi_idx]
+            x = np.cos(phi) * np.sin(theta)
+            y = np.sin(phi) * np.sin(theta)
+            z = np.cos(theta)
+            V = np.array([x, y, z]).reshape((3, 1))
+            heatmap[theta_idx, phi_idx] = calc_pi_fn(V)
+    return heatmap
+
+
+def make_pi_fn_gp(cross_cov_mats):
+    def calc_pi_fn_gp(V):
+        pi = calc_pi_from_cross_cov_mats(cross_cov_mats, proj=V)
+        return pi
+    return calc_pi_fn_gp
+
+
+def make_pi_fn_knn(X, T_pi, n_jobs=-1):
+    from info_measures.continuous import kraskov_stoegbauer_grassberger as ksg
+
+    def calc_pi_fn_knn(V):
+        X_proj = np.dot(X, V)
+        X_proj_lags = form_lag_matrix(X_proj, 2 * T_pi)
+        mi = ksg.MutualInformation(X_proj_lags[:, :T_pi], X_proj_lags[:, T_pi:], add_noise=True)
+        pi = mi.mutual_information(n_jobs=n_jobs)
+        return pi
+    return calc_pi_fn_knn
+
+
+def random_proj_pi_comparison(calc_pi_fn_1, cal_pi_fn_2, N, d=1,
+                              n_samples=10000, seed=20210412):
+    rng = np.random.RandomState(seed)
+    pi_1, pi_2 = np.zeros(n_samples), np.zeros(n_samples)
+    for i in range(n_samples):
+        if i % 100 == 0:
+            print("sample {} of {}".format(i, n_samples))
+        V = init_coef(N, d, rng=rng, init='random_ortho')
+        pi_1[i] = calc_pi_fn_1(V)
+        pi_2[i] = cal_pi_fn_2(V)
+    pi_12 = np.vstack((pi_1, pi_2)).T  # (n_samples, 2)
+    return pi_12
+
+
+def gp_knn_trajectories(num_traj, cross_cov_mats, X, T_pi, d):
+    f_gp = make_pi_fn_gp(cross_cov_mats)
+    f_knn = make_pi_fn_knn(X, T_pi=T_pi)
+    trajectories = []
+    for traj_idx in range(num_traj):
+        print("traj_idx =", traj_idx)
+        opt = DCA(d=d, T=T_pi)
+        opt.cross_covs = cross_cov_mats
+        opt.fit_projection(record_V=True)
+        V_seq = opt.V_seq
+        num_dca_iter = len(V_seq)
+        pi_gp_knn_traj = np.zeros((num_dca_iter, 2))
+        for i in range(num_dca_iter):
+            if i % 50 == 0:
+                print("{} of {}".format(i, num_dca_iter))
+            V = V_seq[i]
+            pi_gp_knn_traj[i, 0] = f_gp(V)
+            pi_gp_knn_traj[i, 1] = f_knn(V)
+        trajectories.append(pi_gp_knn_traj)
+    return trajectories
+
+
+def dca_deflation(cross_cov_mats, n_proj, n_init=1):
+    N = cross_cov_mats.shape[1]
+    T = cross_cov_mats.shape[0] // 2
+    F = np.eye(N)
+    cov_proj = np.copy(cross_cov_mats)
+    basis = np.zeros((N, n_proj))
+    opt = DCA(T=T)
+    for i in range(n_proj):
+        if i % 10 == 0:
+            print(i)
+        # run DCA
+        opt.cross_covs = cov_proj
+        opt.fit_projection(d=1, n_init=n_init)
+        v = opt.coef_.flatten()
+        # get full-dim v
+        v_full = np.dot(F, v)
+        basis[:, i] = v_full
+        # update U, F, cov_proj
+        U = scipy.linalg.orth(np.eye(N - i) - np.outer(v, v))
+        F = np.dot(F, U)
+        cov_proj = np.array([U.T.dot(C).dot(U) for C in cov_proj])
+    return basis
+
+
+def dca_fft_deflation(X, T, n_proj, n_init=1):
+    N = X.shape[1]
+    F = np.eye(N)
+    X_proj = np.copy(X)
+    basis = np.zeros((N, n_proj))
+    opt = DCAFFT(T=T, d=1)
+    for i in range(n_proj):
+        if i % 10 == 0:
+            print(i)
+        # run DCA
+        opt.fit(X_proj, n_init=n_init)
+        v = opt.coef_.flatten()
+        # get full-dim v
+        v_full = np.dot(F, v)
+        basis[:, i] = v_full
+        # update U, F, X
+        U = scipy.linalg.orth(np.eye(N - i) - np.outer(v, v))
+        F = np.dot(F, U)
+        X_proj = np.dot(X_proj, U)
+    return basis
+
+
+def dca_full(cross_cov_mats, n_proj, n_init=1):
+    T = cross_cov_mats.shape[0] // 2
+    opt = DCA(T=T)
+    opt.cross_covs = cross_cov_mats
+    V_seq = []
+    for i in range(n_proj):
+        if i % 10 == 0:
+            print(i)
+        opt.fit_projection(d=i + 1, n_init=n_init)
+        V = opt.coef_
+        V_seq.append(V)
+    return V_seq
+
+
+def calc_pi_vs_dim(cross_cov_mats, V=None, V_seq=None):
+    if V_seq is None:
+        V_seq = [V[:, :i + 1] for i in range(V.shape[1])]
+    pi_vals = np.zeros(len(V_seq))
+    for i in range(len(V_seq)):
+        V = V_seq[i]
+        pi_vals[i] = calc_pi_from_cross_cov_mats(cross_cov_mats, proj=V)
+    return pi_vals

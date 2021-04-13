@@ -5,6 +5,7 @@ from scipy.optimize import minimize
 from scipy.signal.windows import hann
 
 import torch
+import torch.fft
 import torch.nn.functional as F
 
 from .base import SingleProjectionComponentsAnalysis, ortho_reg_fn, init_coef, ObjectiveWrapper
@@ -292,7 +293,7 @@ def make_cepts2(X, T_pi):
 
     # Compute the power spectral density
     window = torch.Tensor(hann(Y.shape[-1])[np.newaxis, np.newaxis]).type(Y.dtype)
-    Yf = torch.fft.rfft(Y * window, dim=1)
+    Yf = torch.fft.rfft(Y * window, dim=-1)
     spect = abs(Yf)**2
     spect = spect.mean(dim=1)
     spect = torch.cat([torch.flip(spect[:, 1:], dims=(1,)), spect], dim=1)

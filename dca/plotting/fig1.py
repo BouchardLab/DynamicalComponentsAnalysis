@@ -5,7 +5,7 @@ from matplotlib import patches
 from matplotlib.patches import Ellipse
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 
-from . import style
+from .. import style
 
 
 dim_colors = ["red", "coral", "gray", "black"]

@@ -181,3 +181,17 @@ def test_stride_DCA(lorenz_dataset):
     model.estimate_data_statistics(X)
     ccms2 = model.cross_covs.numpy()
     assert_allclose(ccms1, ccms2)
+
+
+def test_DCA_validation_score(lorenz_dataset):
+    """Check that score() returns the same value for the training data using the
+    default value of None or passing in the training data.
+    """
+    X = lorenz_dataset
+    model = DCA(T=5, d=2)
+    model.fit(X)
+    assert_allclose(model.score(), model.score(X))
+
+    model.fit_projection(T=3)
+    assert_allclose(model.score(), model.score(X))
+

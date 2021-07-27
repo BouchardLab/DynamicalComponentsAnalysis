@@ -206,7 +206,7 @@ class DynamicalComponentsAnalysis(SingleProjectionComponentsAnalysis):
             raise ValueError
         if (2 * T) > self.cross_covs.shape[0]:
             raise ValueError('T must less than or equal to the value when ' +
-                             '`estimate_cross_covariance()` was called.')
+                             '`estimate_data_statistics()` was called.')
         self.T_fit = T
 
         if self.cross_covs is None:
@@ -276,10 +276,12 @@ class DynamicalComponentsAnalysis(SingleProjectionComponentsAnalysis):
             Optional. If X is none, calculate PI from the training data.
             If X is given, calcuate the PI of X for the learned projections.
         """
+        T = self.T_fit
         if X is None:
-            cross_covs = self.cross_covs
+            cross_covs = self.cross_covs.cpu().numpy()
         else:
-            cross_covs = calc_cross_cov_mats_from_data(X, T=self.T)
+            cross_covs = calc_cross_cov_mats_from_data(X, 2 * self.T)
+        cross_covs = cross_covs[:2 * T]
         if self.block_toeplitz:
             return calc_pi_from_cross_cov_mats_block_toeplitz(cross_covs, self.coef_)
         else:

@@ -204,7 +204,7 @@ def embed_gp(T, N, d, kernel, noise_cov, T_pi, num_to_concat=1):
     return X, Y, U, full_pi, embedding_pi, high_d_cross_cov_mats
 
 
-def gen_lorenz_system(T, integration_dt=0.005):
+def gen_lorenz_system(T, seed, integration_dt=0.005):
     """
     Period ~ 1 unit of time (total time is T)
     So make sure integration_dt << 1
@@ -212,6 +212,7 @@ def gen_lorenz_system(T, integration_dt=0.005):
     Known-to-be-good chaotic parameters
     See sussillo LFADS paper
     """
+    rng = np.random.RandomState(seed)
     rho = 28.0
     sigma = 10.0
     beta = 8 / 3.
@@ -223,23 +224,23 @@ def gen_lorenz_system(T, integration_dt=0.005):
         z_dot = x * y - beta * z
         return (x_dot, y_dot, z_dot)
 
-    x_0 = np.ones(3)
+    x_0 = rng.randn(3)
     t = np.arange(0, T, integration_dt)
     X = scipy.integrate.odeint(dx_dt, x_0, t)
     return X
 
 
-def gen_lorenz_data(num_samples, normalize=True):
+def gen_lorenz_data(num_samples, normalize=True, seed=20210610):
     integration_dt = 0.005
     data_dt = 0.025
     skipped_samples = 1000
-    T = (num_samples + skipped_samples) * data_dt
-    X = gen_lorenz_system(T, integration_dt)
+    T = (num_samples + 2 * skipped_samples) * data_dt
+    X = gen_lorenz_system(T, seed, integration_dt)
     if normalize:
         X -= X.mean(axis=0)
         X /= X.std(axis=0)
-    X_dwn = resample(X, num_samples + skipped_samples, axis=0)
-    X_dwn = X_dwn[skipped_samples:, :]
+    X_dwn = resample(X, num_samples + 2 * skipped_samples, axis=0)
+    X_dwn = X_dwn[skipped_samples:-skipped_samples]
     return X_dwn
 
 

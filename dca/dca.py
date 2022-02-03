@@ -99,6 +99,10 @@ class DynamicalComponentsAnalysis(SingleProjectionComponentsAnalysis):
     block_toeplitz : bool
         If True, uses the block-Toeplitz logdet algorithm which is typically faster and less
         memory intensive on cpu for `T >~ 10` and `d >~ 40`.
+    method : str
+        'toeplitzify' for naive averaging to compute the covariance, which is faster but less
+        accurate for very small datasets. 'ML' for maximum likelihood block toeplitz covariance
+        estimation which can be very slow for large datasets.
     device : str
         What device to run the computation on in Pytorch.
     dtype : pytorch.dtype
@@ -123,7 +127,8 @@ class DynamicalComponentsAnalysis(SingleProjectionComponentsAnalysis):
     """
     def __init__(self, d=None, T=None, init="random_ortho", n_init=1, stride=1,
                  chunk_cov_estimate=None, tol=1e-6, ortho_lambda=10., verbose=False,
-                 block_toeplitz=None, device="cpu", dtype=torch.float64, rng_or_seed=None):
+                 block_toeplitz=None, method='toeplitzify', device="cpu", dtype=torch.float64,
+                 rng_or_seed=None):
 
         super(DynamicalComponentsAnalysis,
               self).__init__(d=d, T=T, init=init, n_init=n_init, stride=stride,
@@ -142,6 +147,7 @@ class DynamicalComponentsAnalysis(SingleProjectionComponentsAnalysis):
         else:
             self.block_toeplitz = block_toeplitz
         self.cross_covs = None
+        self.method = method
 
     def estimate_data_statistics(self, X, T=None, regularization=None, reg_ops=None):
         """Estimate the cross covariance matrix from data.
@@ -174,7 +180,8 @@ class DynamicalComponentsAnalysis(SingleProjectionComponentsAnalysis):
                                                    rng=self.rng,
                                                    regularization=regularization,
                                                    reg_ops=reg_ops,
-                                                   logger=self._logger)
+                                                   logger=self._logger,
+                                                   method=self.method)
         self.cross_covs = torch.tensor(cross_covs, device=self.device, dtype=self.dtype)
         delta_time = round((time.time() - start) / 60., 1)
         self._logger.info('Cross covariance estimate took {:0.1f} minutes.'.format(delta_time))

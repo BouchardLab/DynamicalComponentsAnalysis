@@ -177,7 +177,7 @@ def calc_chunked_cov(X, T, stride, chunks, cov_est=None, rng=None, stride_tricks
 
 def calc_cross_cov_mats_from_data(X, T, mean=None, chunks=None, stride=1,
                                   rng=None, regularization=None, reg_ops=None,
-                                  stride_tricks=True, logger=None):
+                                  stride_tricks=True, logger=None, method='toeplitzify'):
     """Compute the N-by-N cross-covariance matrix, where N is the data dimensionality,
     for each time lag up to T-1.
 
@@ -205,6 +205,11 @@ def calc_cross_cov_mats_from_data(X, T, mean=None, chunks=None, stride=1,
     stride_tricks : bool
         Whether to use numpy stride tricks in form_lag_matrix. True will use less
         memory for large T.
+    logger : logger
+        Logger.
+    method : str
+        'ML' for EM-based maximum likelihood block toeplitz estimation, 'toeplitzify' for naive
+        block averaging.
 
     Returns
     -------
@@ -263,7 +268,12 @@ def calc_cross_cov_mats_from_data(X, T, mean=None, chunks=None, stride=1,
             cov_est /= (n_samples - 1.)
 
     if regularization is None:
-        cov_est = toeplitzify(cov_est, T, N)
+        if method == 'toeplitzify':
+            cov_est = toeplitzify(cov_est, T, N)
+        elif method == 'ML':
+            cov_est = block_toeplitz_covariance(X=None, S_X=cov_est, T=T)
+        else:
+            raise ValueError('`method` should be "toeplitzify" or "ML".')
     elif regularization == 'kron':
         num_folds = reg_ops.get('num_folds', 5)
         r_vals = np.arange(1, min(2 * T, N**2 + 1))
@@ -556,8 +566,8 @@ def calc_block_toeplitz_logdets(cross_cov_mats, proj=None):
             if ii > 1:
                 As = torch.stack([A[ii - 2, ii - jj - 1] for jj in range(1, ii)])
                 D = ccms[ii] - torch.matmul(As, ccms[1:ii]).sum(dim=0)
-            A[(ii - 1, ii - 1)] = torch.solve(D.t(), vb[ii - 1].t())[0].t()
-            Ab[(ii - 1, ii - 1)] = torch.solve(D, v.t())[0].t()
+            A[(ii - 1, ii - 1)] = torch.linalg.solve(vb[ii - 1].t(), D.t()).t()
+            Ab[(ii - 1, ii - 1)] = torch.linalg.solve(v.t(), D).t()
 
             for kk in range(1, ii):
                 A[(ii - 1, kk - 1)] = (A[(ii - 2, kk - 1)]
@@ -631,6 +641,116 @@ def calc_pi_from_cross_cov_mats_block_toeplitz(cross_cov_mats, proj=None):
     T = cross_cov_mats.shape[0]
     logdets = calc_block_toeplitz_logdets(cross_cov_mats, proj)
     return sum(logdets[:T // 2]) - 0.5 * sum(logdets)
+
+
+def extract_diag_blocks(cov, Q):
+    """Extract the diagonal blocks from a matrix.
+
+    Parameters
+    ----------
+    cov : ndarray (Q*P, Q*P)
+        Matrix to extract diagonal blocks from.
+    Q : int
+        The number of blocks.
+    """
+    P = cov.shape[0] // Q
+    blocks = []
+    start = 0
+    for ii in range(Q):
+        start = ii * P
+        blocks.append(cov[start:start + P, start:start + P])
+    return blocks
+
+
+def one_step(S_X, R_X, R_Y, A, A_R_Y, Q):
+    """Perform one EM step for ML block toeplitz covariance estimation.
+
+    Parameters
+    ----------
+    S_X : ndarray
+        Sample covariance matrix.
+    R_X : ndarray
+        Observed covariance matrix.
+    R_Y : ndarray
+        Latent covariance matrix.
+    A : ndarray
+        Projection from latent to observed variables.
+    A_R_Y : ndarray
+        Precomputed A @ R_Y.
+    """
+    R_X_inv_A_R_Y = np.linalg.solve(R_X, A_R_Y)
+    R_Y = (R_Y + A_R_Y.T.conj() @ ((np.linalg.solve(R_X, S_X) @ R_X_inv_A_R_Y) - R_X_inv_A_R_Y))
+    blocks = extract_diag_blocks(R_Y, Q)
+    R_Y = sp.linalg.block_diag(*blocks)
+    A_R_Y = A @ R_Y
+    R_X = (A_R_Y @ A.T.conj()).real
+    return R_X, R_Y, A_R_Y
+
+
+def block_toeplitz_covariance(X, S_X, T, max_iter=100, tol=1e-6):
+    """Estimate the ML block toeplitz covariance matrix using:
+
+    Fuhrmann, Daniel R., and T. A. Barton.
+    "Estimation of block-Toeplitz covariance matrices."
+    1990 Conference Record Twenty-Fourth Asilomar Conference on Signals, Systems and Computers.
+
+    Parameters
+    ----------
+    X : ndarray (time, features) or (batches, time, features)
+        Data used to calculate the PI. Can be None if S_X is given.
+    S_X : ndarray
+        Sample covariance matrix. Can be None if X is given.
+    T : int
+        This T should be 2 * T_pi. This T sets the joint window length not the
+        past or future window length.
+    max_iter : int
+        Maximum number of EM iterations.
+    tol : int
+        LL tolerance for stopping EM iterations.
+    """
+    N = T
+    if X is not None:
+        P = X.shape[1]
+        X_N = form_lag_matrix(X, N)
+        S_X = np.cov(X_N.T)
+    else:
+        P = S_X.shape[0] // N
+
+    rectify_spectrum(S_X)
+    Q = 4 * N
+    NP = N * P
+    QP = Q * P
+
+    I_NP = np.eye(NP)
+    I_P = np.eye(P)
+    W_Q = sp.linalg.dft(Q, scale='sqrtn')
+    I_NP_0 = np.concatenate([I_NP, np.zeros((NP, QP - NP))], axis=1)
+    W_Q_I_P = np.kron(W_Q, I_P)
+    A = I_NP_0 @ W_Q_I_P
+
+    R_Y = np.eye(QP)
+    A_R_Y = A @ R_Y
+    R_X = np.eye(NP)
+    if X is not None:
+        ll = sp.stats.multivariate_normal.logpdf(X_N, mean=np.zeros(NP), cov=R_X).mean()
+    else:
+        d = S_X.shape[0]
+        tr = np.trace(np.linalg.solve(R_X, S_X))
+        logdets = np.linalg.slogdet(R_X)[1] - np.linalg.slogdet(S_X)[1]
+        ll = -.5 * (tr + logdets - d)
+
+    for ii in range(max_iter):
+        R_X, R_Y, A_R_Y = one_step(S_X, R_X, R_Y, A, A_R_Y, Q)
+        if X is not None:
+            new_ll = sp.stats.multivariate_normal.logpdf(X_N, mean=np.zeros(NP), cov=R_X).mean()
+        else:
+            d = S_X.shape[0]
+            tr = np.trace(np.linalg.solve(R_X, S_X))
+            logdets = np.linalg.slogdet(R_X)[1] - np.linalg.slogdet(S_X)[1]
+            new_ll = -.5 * (tr + logdets - d)
+        if abs(new_ll - ll) / max([1., abs(new_ll), abs(ll)]) < tol:
+            break
+    return R_X
 
 
 """

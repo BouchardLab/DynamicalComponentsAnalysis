@@ -284,6 +284,8 @@ class DynamicalComponentsAnalysis(SingleProjectionComponentsAnalysis):
             If X is given, calcuate the PI of X for the learned projections.
         """
         T = self.T_fit
+        if T is None:
+            T = self.T
         if X is None:
             cross_covs = self.cross_covs.cpu().numpy()
         else:

@@ -79,7 +79,8 @@ TODO: use downsampling w/ scipy.signal instead of decimation
 """
 
 
-def load_sabes_data(filename, bin_width_s=.05, preprocess=True):
+def load_sabes_data(filename, bin_width_s=.05, high_pass=True, sqrt=True, thresh=5000,
+                    zscore_pos=True):
     # Load MATLAB file
     with h5py.File(filename, "r") as f:
         # Get channel names (e.g. M1 001 or S1 001)
@@ -119,10 +120,10 @@ def load_sabes_data(filename, bin_width_s=.05, preprocess=True):
                     unique_idxs, counts = np.unique(bin_idx, return_counts=True)
                     # make sure to ignore the hash here...
                     binned_spikes[unique_idxs, chan_idx * n_sorted_units + unit_idx - 1] += counts
-            binned_spikes = binned_spikes[:, binned_spikes.sum(axis=0) > 0]
-            if preprocess:
-                binned_spikes = binned_spikes[:, binned_spikes.sum(axis=0) > 5000]
+            binned_spikes = binned_spikes[:, binned_spikes.sum(axis=0) > thresh]
+            if sqrt:
                 binned_spikes = np.sqrt(binned_spikes)
+            if high_pass:
                 binned_spikes = moving_center(binned_spikes, n=600)
             result[region] = binned_spikes
         # Get cursor position
@@ -131,7 +132,7 @@ def load_sabes_data(filename, bin_width_s=.05, preprocess=True):
         t_mid_bin = np.arange(len(binned_spikes)) * bin_width_s + bin_width_s / 2
         cursor_pos_interp = interp1d(t - t[0], cursor_pos, axis=0)
         cursor_interp = cursor_pos_interp(t_mid_bin)
-        if preprocess:
+        if zscore_pos:
             cursor_interp -= cursor_interp.mean(axis=0, keepdims=True)
             cursor_interp /= cursor_interp.std(axis=0, keepdims=True)
         result["cursor"] = cursor_interp

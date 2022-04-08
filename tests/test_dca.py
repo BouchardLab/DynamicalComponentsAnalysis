@@ -194,4 +194,3 @@ def test_DCA_validation_score(lorenz_dataset):
 
     model.fit_projection(T=3)
     assert_allclose(model.score(), model.score(X))
-

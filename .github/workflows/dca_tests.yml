@@ -27,13 +27,13 @@ jobs:
           python -m pip install flake8 codecov pytest-cov sphinx_rtd_theme
       - name: Lint with flake8
         run: |
-          flake8 src/dca tests
+          python -m flake8 src/dca tests
       - name: Test with pytest
         run: |
-          pytest -sv --cov=./ tests
+          python -m pytest -sv --cov=./ tests
       - name: Build docs
         run: |
-          sphinx-build -W -b html docs/source docs/build
+          python -m sphinx-build -W -b html docs/source docs/build
       - name: Codecov
         run: |
-          codecov
+          python -m codecov

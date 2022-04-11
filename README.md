@@ -1,6 +1,6 @@
 # Dynamical Components Analysis
 
-[![Build Status](https://travis-ci.com/BouchardLab/DynamicalComponentsAnalysis.svg?branch=master)](https://travis-ci.com/BouchardLab/DynamicalComponentsAnalysis)
+[![Actions Status](https://github.com/BouchardLab/DynamicalComponentsAnalysis/workflows/DCA%20tests/badge.svg)](https://github.com/BouchardLab/DynamicalComponentsAnalysis/actions)
 [![Documentation Status](https://readthedocs.org/projects/dynamicalcomponentsanalysis/badge/?version=latest)](https://dynamicalcomponentsanalysis.readthedocs.io/en/latest/?badge=latest)
 [![codecov](https://codecov.io/gh/BouchardLab/DynamicalComponentsAnalysis/branch/master/graph/badge.svg)](https://codecov.io/gh/BouchardLab/DynamicalComponentsAnalysis)
 

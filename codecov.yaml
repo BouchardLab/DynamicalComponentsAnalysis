@@ -1,7 +1,7 @@
 ignore:
   - "setup.py"
   - "tests"
-  - "dca/plotting.py"
-  - "dca/style.py"
-  - "dca/knn.py"
-  - "dca/data_util.py"
+  - "src/dca/plotting.py"
+  - "src/dca/style.py"
+  - "src/dca/knn.py"
+  - "src/dca/data_util.py"

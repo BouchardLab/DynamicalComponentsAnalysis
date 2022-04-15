@@ -2,7 +2,7 @@
 
 [![Actions Status](https://github.com/BouchardLab/DynamicalComponentsAnalysis/workflows/DCA%20tests/badge.svg)](https://github.com/BouchardLab/DynamicalComponentsAnalysis/actions)
 [![Documentation Status](https://readthedocs.org/projects/dynamicalcomponentsanalysis/badge/?version=latest)](https://dynamicalcomponentsanalysis.readthedocs.io/en/latest/?badge=latest)
-[![codecov](https://codecov.io/gh/BouchardLab/DynamicalComponentsAnalysis/branch/master/graph/badge.svg)](https://codecov.io/gh/BouchardLab/DynamicalComponentsAnalysis)
+[![codecov](https://codecov.io/gh/BouchardLab/DynamicalComponentsAnalysis/branch/main/graph/badge.svg?token=atXKol7aHD)](https://codecov.io/gh/BouchardLab/DynamicalComponentsAnalysis)
 
 Implementation of the methods and analyses in [Unsupervised Discovery of Temporal Structure in Noisy Data with Dynamical Components Analysis](http://papers.nips.cc/paper/9574-unsupervised-discovery-of-temporal-structure-in-noisy-data-with-dynamical-components-analysis).
 

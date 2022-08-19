@@ -412,6 +412,10 @@ def calc_pi_from_data(X, T, proj=None, stride=1, rng=None):
     PI : float
         Mutual information in nats.
     """
+    if T % 2 != 0:
+        raise ValueError('T must be even (This T sets the joint window length,' 
+                          + ' not the past or future length')
+
     ccms = calc_cross_cov_mats_from_data(X, T, stride=stride, rng=rng)
 
     return calc_pi_from_cross_cov_mats(ccms, proj=proj)
@@ -432,7 +436,11 @@ def calc_pi_from_cov(cov_2_T_pi):
         Mutual information in nats.
     """
 
+    if cov_2_T_pi.shape[0] % 2 != 0:
+        raise ValueError('cov_2_T_pi must have even shape')
+
     T_pi = cov_2_T_pi.shape[0] // 2
+
     use_torch = isinstance(cov_2_T_pi, torch.Tensor)
 
     cov_T_pi = cov_2_T_pi[:T_pi, :T_pi]
@@ -513,6 +521,10 @@ def calc_pi_from_cross_cov_mats(cross_cov_mats, proj=None):
     PI : float
         Mutual information in nats.
     """
+
+    if len(cross_cov_mats) % 2 != 0:
+        raise ValueError('number of cross covariance matrices provided must be even (equal to joint window length)')
+
     if proj is not None:
         cross_cov_mats_proj = project_cross_cov_mats(cross_cov_mats, proj)
     else:

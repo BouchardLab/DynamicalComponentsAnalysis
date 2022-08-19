@@ -251,8 +251,8 @@ def calc_cross_cov_mats_from_data(X, T, mean=None, chunks=None, stride=1,
             cov_est /= (n_samples - 1.)
     else:
         if len(X) <= T:
-            raise ValueError('T must be shorter than the length of the shortest ' +
-                             'timeseries. If you are using the DCA model, 2 * DCA.T must be ' +
+            raise ValueError('T must be shorter than the length of the shortest '\
+                             'timeseries. If you are using the DCA model, 2 * DCA.T must be '\
                              'shorter than the shortest timeseries.')
         if mean is None:
             mean = X.mean(axis=0, keepdims=True)
@@ -413,8 +413,8 @@ def calc_pi_from_data(X, T, proj=None, stride=1, rng=None):
         Mutual information in nats.
     """
     if T % 2 != 0:
-        raise ValueError('T must be even (This T sets the joint window length,' 
-                          + ' not the past or future length')
+        raise ValueError('T must be even (This T sets the joint window length,'
+                         ' not the past or future length')
 
     ccms = calc_cross_cov_mats_from_data(X, T, stride=stride, rng=rng)
 
@@ -523,7 +523,8 @@ def calc_pi_from_cross_cov_mats(cross_cov_mats, proj=None):
     """
 
     if len(cross_cov_mats) % 2 != 0:
-        raise ValueError('number of cross covariance matrices provided must be even (equal to joint window length)')
+        raise ValueError('number of cross covariance matrices provided must be even'
+                         '(equal to joint window length)')
 
     if proj is not None:
         cross_cov_mats_proj = project_cross_cov_mats(cross_cov_mats, proj)

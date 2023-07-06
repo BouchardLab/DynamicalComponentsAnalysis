@@ -363,7 +363,7 @@ class SingleProjectionComponentsAnalysis(BaseComponentsAnalysis):
             Dimensionality of the projection (optional.)
         T : int
             T for PI calculation (optional.)
-        n_init : int
+        n_init : int    
             Number of random restarts (optional.)
         """
         if n_init is None:

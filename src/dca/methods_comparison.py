@@ -1,7 +1,7 @@
 import warnings
 
 import numpy as np
-
+import pdb
 import scipy
 from scipy.optimize import minimize
 from sklearn.decomposition import FactorAnalysis as FA, PCA
@@ -692,19 +692,19 @@ class JPCA(object):
         dX = np.concatenate([np.diff(Xi, axis=0) for Xi in X_red], axis=0)
         X_prestate = np.concatenate([Xi[:-1] for Xi in X_red], axis=0)
         M_skew = self._fit_skew(X_prestate, dX)
-
+        print(M_skew)
         self.eigen_vals_, self.eigen_vecs_ = self._get_jpcs(M_skew)
 
         self.proj_vectors_ = []
-        for i in range(len(self.eigen_vecs_) // 2):
-            v1 = self.eigen_vecs_[2 * i]
-            v2 = self.eigen_vecs_[2 * i + 1]
-            real_v1 = np.real(v1 + v2)
-            real_v1 /= np.linalg.norm(real_v1)
-            real_v2 = np.imag(v1 - v2)
-            real_v2 /= np.linalg.norm(real_v2)
-            self.proj_vectors_.append(real_v1)
-            self.proj_vectors_.append(real_v2)
+        # for i in range(len(self.eigen_vecs_) // 2):
+        #     v1 = self.eigen_vecs_[2 * i]
+        #     v2 = self.eigen_vecs_[2 * i + 1]
+        #     real_v1 = np.real(v1 + v2)
+        #     real_v1 /= np.linalg.norm(real_v1)
+        #     real_v2 = np.imag(v1 - v2)
+        #     real_v2 /= np.linalg.norm(real_v2)  
+        #     self.proj_vectors_.append(real_v1)
+        #     self.proj_vectors_.append(real_v2)
         self.proj_vectors_ = np.array(self.proj_vectors_)
         return self
 
@@ -870,3 +870,242 @@ class JPCA(object):
         """
         shape = (int(vec.size**(.5)), -1)
         return np.reshape(vec, shape, 'F')
+
+class symmJPCA(JPCA):
+    """ Model for extracting rotational dynamics from timeseries data using jPCA.
+
+    As presented in https://www.nature.com/articles/nature11129.
+    Based on code from https://churchland.zuckermaninstitute.columbia.edu/content/code.
+
+    Parameters
+    ----------
+    n_components : even int (default=6)
+        Number of components to reduce X to.
+
+    mean_subtract: boolean (default=True)
+        Whether to subtract the cross-condition mean from each condition
+        before running jPCA.
+
+    Attributes
+    ----------
+    eigen_vecs_ : list
+        List of numpy eigenvectors from symm JPCA symmetric matrix sorted in
+        descending order by magnitude of eigenvalue.
+
+    eigen_vals_ : list
+        List of eigenvalues from symm JPCA symmetric matrix. The index
+        of each eigenvalue corresponds with the eigenvector in `eigen_vecs_`.
+
+    pca_ : sklearn.decomp.PCA object
+        PCA object used to transform X to X_red.
+
+    cross_condition_mean_ : ndarray (time, features)
+        Cross condition mean of X during fit.
+
+    proj_vectors_ : list
+        List of projection vectors sorted in order by conjugate eigenvalue pairs.
+
+
+    """
+
+    def fit(self, X):
+        """ Fit a symm jPCA model to X.
+
+        Parameters
+        ----------
+        X : ndarray (conditions, time, features)
+            Data to fit using symm jPCA model.
+
+        Returns
+        -------
+        self
+        """
+        if self.n_components_ > X.shape[2]:
+            raise ValueError("n_components is greater than number of features in X.")
+
+        if len(X.shape) != 3:
+            raise ValueError("Data must be in 3 dimensions (conditions, time, features).")
+
+        if self.mean_subtract_:
+            self.cross_condition_mean_ = np.mean(X, axis=0, keepdims=True)
+            X = X - self.cross_condition_mean_
+
+        # X_flat = np.concatenate(X, axis=0)
+        # self.pca_ = PCA(n_components=self.n_components_)
+        # self.pca_.fit(X_flat)
+
+        X_red = [Xi for Xi in X]
+        dX = np.concatenate([np.diff(Xi, axis=0) for Xi in X_red], axis=0)
+        X_prestate = np.concatenate([Xi[:-1] for Xi in X_red], axis=0)
+        M_symm = self._fit_symm(X_prestate, dX) 
+        print(M_symm)
+
+        self.eigen_vals_, self.eigen_vecs_ = self._get_jpcs(M_symm)
+
+        # self.proj_vectors_ = []
+        # for i in range(len(self.eigen_vecs_) // 2):
+        #     v1 = self.eigen_vecs_[2 * i]
+        #     v2 = self.eigen_vecs_[2 * i + 1]
+        #     real_v1 = np.real(v1 + v2)
+        #     real_v1 /= np.linalg.norm(real_v1)
+        #     real_v2 = np.imag(v1 - v2)
+        #     real_v2 /= np.linalg.norm(real_v2)
+        #     self.proj_vectors_.append(real_v1)
+        #     self.proj_vectors_.append(real_v2)
+        self.proj_vectors_ = np.array(self.eigen_vecs_)
+        return self
+
+    def transform(self, X):
+        """ Transform X using JPCA components.
+
+        Parameters
+        ----------
+        X : ndarray (conditions, time, features)
+            Data to fit using jPCA model.
+
+        Returns
+        -------
+        ndarray (conditions, time, n_components)
+            X projected onto jPCA components (conditions are preserved).
+            In X_proj, every pair of features correspond to a conjugate pair
+            of JPCA eigenvectors. The pairs are sorted by largest magnitude eigenvalue
+            (i.e. dimensions 0 and 1 in X_proj contains the projection from
+            the conjugate eigenvector pair with the largest eigenvalue magnitude).
+            The projection pair is what captures the rotations.
+
+        """
+
+        if self.mean_subtract_:
+            X = X - self.cross_condition_mean_
+
+        X_red = [self.pca_.transform(Xi) for Xi in X]
+        X_proj = np.stack([X_redi @ self.proj_vectors_.T for X_redi in X_red], axis=0)
+        return X_proj
+
+    def fit_transform(self, X):
+        """ Fit and transform X using JPCA.
+
+        Parameters
+        ----------
+        X : ndarray (conditions, time, features)
+            Data to be transformed by JPCA.
+
+        Returns
+        -------
+        ndarray (conditions*time, n_components)
+            X projected onto JPCA components.
+        """
+        self.fit(X)
+        return self.transform(X)
+
+    def _fit_symm(self, X_prestate, dX):
+        """
+        Assume the differential equation dX = M * X_prestate. This function will return
+        M_skew, the skew symmetric component of M, that best fits the data. dX and
+        X_prestate should be the same shape.
+        Note: M is solved for using least squares.
+
+        Parameters
+        ----------
+        X_prestate : np.array
+            Time series matrix with the last time step removed.
+
+        dX : np.array
+            Discrete derivative matrix of X obtained by subtracting each row with its
+            previous time step. (derivative at time 0 is not included).
+
+        Returns
+        -------
+        M_skew : np.array
+            Optimal skew symmetric matrix that best fits dX and X_prestate.
+
+        """
+        
+        # Use least squares
+        M0, _, _, _ = np.linalg.lstsq(X_prestate, dX, rcond=None)
+        M0_symm = .5 * (M0 + M0.T)
+        #m_symm = self._mat2vec(M0_symm)
+        opt = self._optimize_symm(M0_symm, X_prestate, dX)
+        m_symm = opt.x
+        M_symm = np.zeros((X_prestate.shape[1], X_prestate.shape[1]))
+        idx = np.triu_indices(M_symm.shape[0])
+        M_symm[idx] = m_symm
+        diag = np.diag(M_symm)
+        M_symm = M_symm + M_symm.T - np.diag(diag)
+        return M_symm
+
+    def _optimize_symm(self, m_symm, X_prestate, dX):
+        """
+        Solves for M_skew using gradient optimization methods.
+        The objective function and derivative equations have closed forms.
+
+        Parameters
+        ----------
+        m_skew : np.array
+            Flattened array (1d vector) of initial M_skew guess
+
+        X_prestate : np.array
+            Time series matrix with the last time step removed.
+
+        dX : np.array
+            Discrete derivative matrix of X obtained by subtracting each row with its
+            previous time step. (derivative at time 0 is not included).
+
+        Returns
+        -------
+        opt : scipy.OptimizeResult object
+            SciPy optimization result.
+        """
+        def objective(m_symm, X_prestate, dX):
+            M_symm = np.zeros((X_prestate.shape[1], X_prestate.shape[1]))
+            idx = np.triu_indices(M_symm.shape[0])
+            M_symm[idx] = m_symm
+            diag = np.diag(M_symm)
+            M_symm = M_symm + M_symm.T - np.diag(diag)
+            loss = np.linalg.norm(dX - X_prestate @ M_symm)**2
+            #print(loss)
+            return loss
+        
+        def derivative(m_symm, X_prestate, dX):
+            # Convert m_symm to pytorch tensor and construct accordingly
+            m_symm = torch.tensor(m_symm, requires_grad=True).float()
+            m_symm.retain_grad()
+            M_symm = torch.zeros((X_prestate.shape[1], X_prestate.shape[1])).float()
+            idx = np.triu_indices(M_symm.shape[0])
+            M_symm[idx] = m_symm      
+            M_symm = M_symm + M_symm.T - torch.diag(torch.diag(M_symm))      
+            l = torch.linalg.norm(torch.tensor(dX).float() - torch.tensor(X_prestate).float() @ M_symm)**2
+            l.backward()
+            return m_symm.grad.numpy()
+
+        print(np.linalg.norm(dX - X_prestate @ m_symm)**2)
+        print(objective(m_symm[np.triu_indices(m_symm.shape[0])], X_prestate, dX))
+        opt = minimize(objective, m_symm[np.triu_indices(m_symm.shape[0])], jac=derivative, args=(X_prestate, dX))
+        return opt
+    def _get_jpcs(self, M_skew):
+        """
+        Given optimal M_skew matrix, return the eigenvalues and eigenvectors
+        of M_skew. The eigenvectors/values are sorted by eigenvalue magnitude.
+
+        Parameters
+        ----------
+        M_skew : np.array
+            optimal M_skew (2D matrix)
+
+        Returns
+        -------
+        evecs : np.array
+            2D Array where each row is a jPC.
+
+        evals : np.array of floats
+            Array where each position contains the correpsonding eigenvalue to the
+            jPC in evecs.
+        """
+        evals, evecs = np.linalg.eig(M_skew)
+        evecs = evecs.T
+        # get rid of small real number
+        evals_j = np.real(evals)
+
+        # sort in descending order
+        sort_indices = np.argsort(evals_j)[::-1]
+        return evals_j[sort_indices], evecs[sort_indices]

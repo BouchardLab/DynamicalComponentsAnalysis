@@ -19,6 +19,7 @@ classifiers = [
     # "License :: OSI Approved :: BSD-3-Clause-LBNL",
     "Operating System :: OS Independent"
 ]
+dynamic = ["dependencies"]
 
 [project.urls]
 Homepage = "https://github.com/BouchardLab/DynamicalComponentsAnalysis"
@@ -29,3 +30,6 @@ where = ["src"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}

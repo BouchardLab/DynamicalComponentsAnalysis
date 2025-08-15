@@ -32,6 +32,15 @@ If you are installing with `pip` you can run
 $ pip install -e . -r requirements.txt
 ```
 
+Note: DCA only requires a CPU-only `pytorch`. If you wish to, **before** installing DCA as in the above instructions,
+you can install a CPU-only `pytorch` by following the `pytorch` [installation guide](https://pytorch.org/get-started/locally/).
+
+
+```bash
+$ pip install torch --index-url https://download.pytorch.org/whl/cpu
+```
+
+
 ## Datasets
 The 4 datasets used in the DCA paper can be found in the following locations
 * [M1](https://zenodo.org/record/583331) - We used indy_20160627_01.mat

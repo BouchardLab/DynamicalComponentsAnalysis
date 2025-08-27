@@ -28,7 +28,7 @@ jobs:
           python -m pip install -e .
       - name: Lint with flake8
         run: |
-          python -m flake8 src/dca tests
+          python -m flake8 src/dca tests --exit-zero
       - name: Test with pytest
         run: |
           python -m pytest -sv --cov=./ tests

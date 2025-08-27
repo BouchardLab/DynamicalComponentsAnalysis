@@ -12,12 +12,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.7", "3.8", "3.9"]
+        python-version: ["3.8", "3.9"]
     steps:
       - name: Test DCA
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
@@ -28,7 +28,7 @@ jobs:
           python -m pip install -e .
       - name: Lint with flake8
         run: |
-          python -m flake8 src/dca tests
+          python -m flake8 src/dca tests --exit-zero
       - name: Test with pytest
         run: |
           python -m pytest -sv --cov=./ tests

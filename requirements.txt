@@ -4,5 +4,4 @@ h5py
 pandas
 scikit-learn
 matplotlib
---extra-index-url https://download.pytorch.org/whl/cpu
 torch

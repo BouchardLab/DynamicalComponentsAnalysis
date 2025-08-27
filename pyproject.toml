@@ -1,3 +1,33 @@
 [build-system]
-requires = ["setuptools>=42"]
+requires = ["setuptools>=61", "wheel"]  # [CHANGE] upgraded setuptools to 61+ for full pyproject.toml metadata support
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "DynamicalComponentsAnalysis"
+version = "1.1.0"
+description = "Dynamical Components Analysis"
+readme = "README.md"
+requires-python = ">=3.6"
+authors = [
+    { name="Jesse Livezey", email="jesse.livezey@gmail.com" },
+    { name="David Clark" }
+]
+license = { file = "LICENSE.txt" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent"
+]
+dynamic = ["dependencies"]
+
+[project.urls]
+Homepage = "https://github.com/BouchardLab/DynamicalComponentsAnalysis"
+"Bug Tracker" = "https://github.com/BouchardLab/DynamicalComponentsAnalysis/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}

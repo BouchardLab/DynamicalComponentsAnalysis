@@ -812,8 +812,8 @@ class memoized(object):
 
 @memoized
 def pv_permutation(T, N):
-    A = np.arange((T * N)**2, dtype=np.int).reshape((T * N, T * N))
-    A_perm = np.zeros((T**2, N**2), dtype=np.int)
+    A = np.arange((T * N)**2, dtype=int).reshape((T * N, T * N))
+    A_perm = np.zeros((T**2, N**2), dtype=int)
     for i in range(T):
         for j in range(T):
             row_idx = i * T + j

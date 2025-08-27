@@ -12,8 +12,7 @@ authors = [
     { name="Jesse Livezey", email="jesse.livezey@gmail.com" },
     { name="David Clark" }
 ]
-license = "BSD-3-Clause-LBNL"  # [CHANGE] refactored from classifiers
-# license-files = ["LICENSE.txt"]
+license = { file = "LICENSE.txt" }
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: BSD-3-Clause-LBNL",

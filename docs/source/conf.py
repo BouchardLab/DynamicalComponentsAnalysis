@@ -12,7 +12,6 @@
 #
 import os
 import sys
-import sphinx_rtd_theme
 
 # Get the project root dir, which is the parent parent dir of this
 project_root = os.path.dirname(os.path.dirname(os.getcwd()))

@@ -3,7 +3,7 @@ requires = ["setuptools>=61", "wheel"]  # [CHANGE] upgraded setuptools to 61+ fo
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "dca"
+name = "DynamicalComponentsAnalysis"
 version = "1.0.0"
 description = "Dynamical Components Analysis"
 readme = "README.md"

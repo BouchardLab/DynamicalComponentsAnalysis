@@ -15,7 +15,6 @@ authors = [
 license = { file = "LICENSE.txt" }
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: BSD-3-Clause-LBNL",
     "Operating System :: OS Independent"
 ]
 dynamic = ["dependencies"]

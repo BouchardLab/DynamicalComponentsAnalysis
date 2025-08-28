@@ -1,0 +1,37 @@
+name: Publish python package to testPyPI
+
+on: 
+  release:
+    types: [published]
+
+jobs:
+  publish-to-testpypi:
+    name: Publish release to testPyPI
+    runs-on: ubuntu-latest
+    environment:
+      name: testrelease
+      url: https://test.pypi.org/p/DynamicalComponentsAnalysis/
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.x"
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build
+
+      - name: Build package
+        run: python -m build
+
+      - name: Publish package distributions to testPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/

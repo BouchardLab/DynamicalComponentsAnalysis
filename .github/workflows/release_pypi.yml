@@ -9,7 +9,7 @@ jobs:
     name: Publish release to PyPI
     runs-on: ubuntu-latest
     environment:
-      name: release
+      name: testrelease
       url: https://pypi.org/p/DynamicalComponentsAnalysis/
     permissions:
       id-token: write

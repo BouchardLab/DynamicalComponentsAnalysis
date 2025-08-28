@@ -1,16 +1,16 @@
-name: Publish python package to testPyPI
+name: Publish python package to PyPI
 
 on: 
   release:
     types: [published]
 
 jobs:
-  publish-to-testpypi:
-    name: Publish release to testPyPI
+  publish-to-pypi:
+    name: Publish release to PyPI
     runs-on: ubuntu-latest
     environment:
-      name: testrelease
-      url: https://test.pypi.org/p/DynamicalComponentsAnalysis/
+      name: release
+      url: https://pypi.org/p/DynamicalComponentsAnalysis/
     permissions:
       id-token: write
 
@@ -31,7 +31,5 @@ jobs:
       - name: Build package
         run: python -m build
 
-      - name: Publish package distributions to testPyPI
+      - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          repository-url: https://test.pypi.org/legacy/

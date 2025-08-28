@@ -9,8 +9,8 @@ description = "Dynamical Components Analysis"
 readme = "README.md"
 requires-python = ">=3.6"
 authors = [
-    { name="Jesse Livezey", email="jesse.livezey@gmail.com" },
-    { name="David Clark" }
+    { name = "Jesse Livezey", email = "jesse.livezey@gmail.com" },
+    { name = "David Clark", email = "" }
 ]
 license = { file = "LICENSE.txt" }
 classifiers = [
